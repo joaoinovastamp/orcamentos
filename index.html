@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="theme-color" content="#1F3864">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2714%27 fill=%27%231F3864%27/%3E%3Ctext x=%2732%27 y=%2743%27 font-size=%2730%27 text-anchor=%27middle%27 fill=%27white%27 font-family=%27Arial%27 font-weight=%27bold%27%3EOR%3C/text%3E%3C/svg%3E">
+<title>INOVASTAMP Orçamentos</title>
+<style>
+  :root { --azul:#1F3864; --azul2:#2E5597; --fundo:#F3F5F9; --cartao:#fff; --txt:#1c2330; --mut:#6b7385; --linha:#e3e7ef;
+          --verde:#1E8E5A; --amarelo:#FFF6C2; --verm:#C0392B; --laranja:#D9822B; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; background:var(--fundo); color:var(--txt); font:15px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif; }
+  header { position:sticky; top:0; z-index:5; background:var(--azul); color:#fff; padding:12px 16px; display:flex; align-items:center; gap:10px; }
+  header h1 { font-size:17px; margin:0; flex:1; font-weight:600; }
+  header button { background:rgba(255,255,255,.15); color:#fff; border:0; border-radius:8px; padding:6px 10px; font-size:14px; }
+  main { padding:12px 12px 90px; max-width:720px; margin:0 auto; }
+  nav { position:fixed; bottom:0; left:0; right:0; background:#fff; border-top:1px solid var(--linha); display:flex; z-index:6; padding-bottom:env(safe-area-inset-bottom); }
+  nav button { flex:1; border:0; background:none; padding:9px 0 8px; font-size:12px; color:var(--mut); display:flex; flex-direction:column; align-items:center; gap:2px; }
+  nav button b { font-size:19px; line-height:1; }
+  nav button.on { color:var(--azul); font-weight:600; }
+  .card { background:var(--cartao); border-radius:12px; padding:12px 14px; margin-bottom:10px; box-shadow:0 1px 2px rgba(0,0,0,.06); }
+  .row { display:flex; gap:8px; align-items:center; }
+  .sp { flex:1; min-width:0; }
+  .mut { color:var(--mut); font-size:13px; }
+  .num { font-variant-numeric:tabular-nums; }
+  .b { font-weight:600; }
+  .tag { display:inline-block; padding:2px 8px; border-radius:20px; font-size:12px; font-weight:600; background:#e9edf5; color:var(--azul); white-space:nowrap; }
+  .t-Rascunho{background:#eceff3;color:#56607a} .t-Enviado{background:#e3eefc;color:#2259a8} .t-Aceite{background:#e2f5ea;color:#1E8E5A}
+  .t-Recusado{background:#fbe5e3;color:#C0392B} .t-Emprodução{background:#fff0dd;color:#b4651a} .t-Faturado{background:#1E8E5A;color:#fff}
+  input,select,textarea { width:100%; font:inherit; padding:9px 10px; border:1px solid var(--linha); border-radius:8px; background:#fff; color:var(--txt); }
+  input:focus,select:focus,textarea:focus { outline:2px solid var(--azul2); border-color:transparent; }
+  label { display:block; font-size:12px; color:var(--mut); margin:8px 0 3px; }
+  .g2 { display:grid; grid-template-columns:1fr 1fr; gap:0 10px; }
+  .g3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:0 8px; }
+  .btn { border:0; border-radius:10px; padding:11px 14px; font:inherit; font-weight:600; background:var(--azul); color:#fff; }
+  .btn.sec { background:#e6ebf4; color:var(--azul); }
+  .btn.ok { background:var(--verde); }
+  .btn.lite { background:none; color:var(--azul2); padding:6px 4px; font-weight:500; }
+  .btn:disabled { opacity:.5; }
+  .acts { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+  .acts .btn { flex:1; }
+  .chips { display:flex; gap:6px; overflow-x:auto; padding:4px 0 8px; }
+  .chip { border:1px solid var(--linha); background:#fff; border-radius:20px; padding:5px 11px; font-size:13px; white-space:nowrap; color:var(--txt); }
+  .chip.on { background:var(--azul); color:#fff; border-color:var(--azul); }
+  h2 { font-size:15px; margin:14px 2px 8px; color:var(--azul); }
+  .lin { border-top:1px solid var(--linha); padding:8px 0; }
+  .lin:first-child { border-top:0; }
+  .tot { display:flex; justify-content:space-between; padding:3px 0; }
+  .tot.big { font-size:17px; font-weight:700; color:var(--azul); border-top:1px solid var(--linha); margin-top:4px; padding-top:7px; }
+  .stk { color:var(--verde); font-weight:600; font-size:12px; }
+  .prod-btn { text-align:left; background:var(--amarelo); border:1px solid #eadb85; border-radius:8px; padding:9px 10px; width:100%; font:inherit; color:var(--txt); }
+  .x { border:0; background:none; color:var(--verm); font-size:20px; padding:0 4px; }
+  #modal { position:fixed; inset:0; background:rgba(15,22,40,.45); z-index:20; display:none; }
+  #modal .box { position:absolute; left:0; right:0; bottom:0; top:8%; background:#fff; border-radius:16px 16px 0 0; display:flex; flex-direction:column; }
+  #modal .hd { padding:12px; border-bottom:1px solid var(--linha); display:flex; gap:8px; }
+  #modal .bd { overflow-y:auto; flex:1; }
+  .grp { position:sticky; top:0; background:#eef1f7; padding:6px 12px; font-size:12px; font-weight:700; color:var(--azul); }
+  .it { padding:8px 12px; border-bottom:1px solid #f0f2f6; font-size:14px; display:flex; gap:10px; align-items:center; }
+  .ft { width:44px; height:44px; object-fit:contain; border-radius:6px; background:#f3f5f9; flex:none; }
+  .ft.g { width:84px; height:84px; }
+  .it:active { background:#eef3ff; }
+  #load { position:fixed; inset:0; background:rgba(255,255,255,.6); z-index:30; display:none; align-items:center; justify-content:center; }
+  .spin { width:38px; height:38px; border:4px solid #cfd8ea; border-top-color:var(--azul); border-radius:50%; animation:r 0.8s linear infinite; }
+  @keyframes r { to { transform:rotate(360deg); } }
+  #msg { position:fixed; left:12px; right:12px; bottom:76px; z-index:40; background:#1c2330; color:#fff; padding:11px 14px; border-radius:10px; display:none; white-space:pre-line; font-size:14px; }
+  #msg.err { background:var(--verm); }
+  .vazio { text-align:center; color:var(--mut); padding:30px 10px; }
+  details summary { color:var(--azul2); font-size:13px; margin-top:8px; }
+</style>
+</head>
+<body>
+<header><h1 id="titulo">Orçamentos</h1><button id="btnTopo" onclick="recarregar()">↻</button></header>
+<main id="main"></main>
+<nav>
+  <button id="n-lista" onclick="irLista()"><b>☰</b>Orçamentos</button>
+  <button id="n-novo" onclick="novo()"><b>＋</b>Novo</button>
+  <button id="n-cons" onclick="irConsulta()"><b>€</b>Consulta</button>
+  <button id="n-stock" onclick="irStock()"><b>▦</b>Stock</button>
+</nav>
+<div id="modal"><div class="box"><div class="hd"><input id="mq" placeholder="Procurar produto ou referência…" oninput="filtrarModal()"><button class="btn sec" onclick="fecharModal()">Fechar</button></div><div class="bd" id="mbd"></div></div></div>
+<div id="load"><div class="spin"></div></div>
+<div id="msg"></div>
+
+<script>
+var D = null, LISTA = [], FILTRO = 'Todos', BUSCA = '', ED = null, CALC = null, PICK = null, STOCK = null;
+var STK = '★ ', SEP = ' ▸ ';
+
+function $(id) { return document.getElementById(id); }
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+function eur(v) { if (v === '' || v == null || isNaN(v)) return '—'; return Number(v).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' €'; }
+function pct(v) { return v === '' || v == null ? '' : Math.round(Number(v) * 1000) / 10 + '%'; }
+function dt(s) { var m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[3] + '/' + m[2] + '/' + m[1] : ''; }
+function norm(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''); }
+function base(ref) { var s = String(ref || ''); var i = s.indexOf(' ('); return (i > 0 ? s.substring(0, i) : s).toUpperCase(); }
+function limpaProd(t) { t = String(t || ''); return t.indexOf(STK) === 0 && t.indexOf(SEP) > 0 ? t.substring(t.indexOf(SEP) + SEP.length) : t; }
+function limpaCor(t) { t = String(t || ''); return t.indexOf(STK) === 0 ? t.substring(STK.length).replace(/ — \d+ em stock$/, '') : t; }
+function foto(ref, grande) {
+  var k = base(ref).replace(/[^A-Z0-9_-]/g, '_'), u = D && D.fotos ? D.fotos[k] : '';
+  return u ? '<img class="ft' + (grande ? ' g' : '') + '" loading="lazy" src="' + esc(u) + '" onerror="this.style.visibility=\'hidden\'">' : '<div class="ft' + (grande ? ' g' : '') + '"></div>';
+}
+function nomeCurto(lab) { var i = lab.indexOf(' — '); return i > 0 ? lab.substring(i + 3) : lab; }
+
+function msg(t, err) { var m = $('msg'); m.textContent = t; m.className = err ? 'err' : ''; m.style.display = 'block'; clearTimeout(msg.t); msg.t = setTimeout(function () { m.style.display = 'none'; }, err ? 7000 : 3500); }
+function carregando(on) { $('load').style.display = on ? 'flex' : 'none'; }
+var PIN = '';
+try { PIN = localStorage.getItem('inovastamp_pin') || ''; } catch (e) {}
+var API = 'https://script.google.com/macros/s/AKfycby0OuenHSPaxgmop0q1uMh_Y3OxLCV4KYdx8WnrP76cjZiPFaEZFXrYqXw42jdv3qhwrg/exec';
+function call(fn) {
+  var args = [PIN].concat(Array.prototype.slice.call(arguments, 1));
+  carregando(true);
+  function falha(t) {
+    carregando(false);
+    if (String(t).indexOf('CODIGO_ERRADO') >= 0) { try { localStorage.removeItem('inovastamp_pin'); } catch (x) {} PIN = ''; entrar('Código errado.'); }
+    else msg(t, true);
+  }
+  return new Promise(function (ok, ko) {
+    fetch(API, { method: 'POST', body: JSON.stringify({ fn: fn, args: args }), credentials: 'omit', redirect: 'follow' })
+      .then(function (r) { return r.json(); })
+      .then(function (r) { if (r && r.ok) { carregando(false); ok(r.result); } else { falha(r && r.error ? r.error : 'Erro desconhecido'); ko(r); } })
+      .catch(function (e) { falha('Sem ligação à folha. Verifica a internet e tenta outra vez.'); ko(e); });
+  });
+}
+// PDF: vem pela app (funciona com qualquer conta, sem precisar de acesso ao Drive)
+function abrirPdf(num) {
+  var w = null;
+  call('apiPdf', num).then(function (r) {
+    var bin = atob(r.b64), a = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
+    var url = URL.createObjectURL(new Blob([a], { type: 'application/pdf' }));
+    var l = document.createElement('a'); l.href = url; l.download = r.nome; l.target = '_blank';
+    document.body.appendChild(l); l.click(); l.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+  });
+}
+function navOn(id) { ['n-lista','n-novo','n-cons','n-stock'].forEach(function (n) { $(n).className = n === id ? 'on' : ''; }); window.scrollTo(0, 0); }
+
+// ---------------- arranque ----------------
+function iniciar() { if (!PIN) { entrar(); return; } call('apiInit').then(function (d) { D = d; irLista(true); }); }
+function entrar(erro) {
+  $('titulo').textContent = 'INOVASTAMP';
+  $('main').innerHTML = '<div class="card" style="margin-top:30px"><div class="b" style="font-size:17px">Código da app</div>' +
+    '<div class="mut">Escreve o código definido na folha (INOVASTAMP › Definir código da app). Só é pedido uma vez neste telemóvel.</div>' +
+    (erro ? '<div style="color:var(--verm);margin-top:8px">' + esc(erro) + '</div>' : '') +
+    '<input id="pin" type="password" autocomplete="current-password" style="margin-top:12px" onkeydown="if(event.key===\'Enter\')okPin()">' +
+    '<div class="acts"><button class="btn" onclick="okPin()">Entrar</button></div></div>';
+  setTimeout(function () { var p = $('pin'); if (p) p.focus(); }, 50);
+}
+function okPin() {
+  var p = $('pin').value.trim(); if (!p) return;
+  PIN = p;
+  call('apiEntrar').then(function () { try { localStorage.setItem('inovastamp_pin', p); } catch (e) {} iniciar(); });
+}
+function recarregar() { D = null; STOCK = null; iniciar(); }
+
+// ---------------- lista ----------------
+function irLista(rec) {
+  navOn('n-lista'); $('titulo').textContent = 'Orçamentos';
+  if (rec || !LISTA.length) call('apiLista').then(function (l) { LISTA = l; desenharLista(); }); else desenharLista();
+}
+function desenharLista() {
+  var est = ['Todos'].concat(D.estados);
+  var h = '<input id="busca" placeholder="Procurar cliente ou nº…" value="' + esc(BUSCA) + '" oninput="BUSCA=this.value;desenharItens()">' +
+    '<div class="chips">' + est.map(function (e) { return '<button class="chip' + (e === FILTRO ? ' on' : '') + '" onclick="FILTRO=\'' + e + '\';desenharLista()">' + esc(e) + '</button>'; }).join('') + '</div><div id="itens"></div>';
+  $('main').innerHTML = h; desenharItens();
+}
+function desenharItens() {
+  var q = norm(BUSCA);
+  var l = LISTA.filter(function (o) { return (FILTRO === 'Todos' || o.estado === FILTRO) && (!q || norm(o.cliente + ' ' + o.num + ' ' + o.fatura).indexOf(q) >= 0); });
+  $('itens').innerHTML = l.length ? l.map(function (o) {
+    return '<div class="card" onclick="abrir(\'' + esc(o.num) + '\')"><div class="row"><div class="sp"><div class="b">' + esc(o.cliente || '—') + '</div>' +
+      '<div class="mut">' + esc(o.num) + ' · ' + dt(o.data) + ' · ' + (o.qtd || 0) + ' pç' + (o.fatura ? ' · Fat. ' + esc(o.fatura) : '') + '</div></div>' +
+      '<div style="text-align:right"><div class="b num">' + eur(o.tC) + '</div><span class="tag t-' + esc(o.estado.replace(/\s/g, '')) + '">' + esc(o.estado || '—') + '</span></div></div></div>';
+  }).join('') : '<div class="vazio">Sem orçamentos.</div>';
+}
+
+// ---------------- detalhe ----------------
+function abrir(num) { call('apiAbrir', num).then(function (o) { desenharDetalhe(o); }); }
+function desenharDetalhe(o) {
+  navOn('n-lista'); $('titulo').textContent = o.num;
+  var h = '<div class="card"><div class="row"><div class="sp"><div class="b" style="font-size:17px">' + esc(o.cliente) + '</div>' +
+    '<div class="mut">' + (o.nif ? 'NIF ' + esc(o.nif) + ' · ' : '') + esc(o.email || 'sem email') + (o.tel ? ' · ' + esc(o.tel) : '') + '</div>' +
+    '<div class="mut">' + dt(o.data) + ' · validade ' + esc(o.validade) + ' dias' + (o.desconto ? ' · desconto ' + pct(o.desconto) : '') + '</div></div>' +
+    '<span class="tag t-' + esc(o.estado.replace(/\s/g, '')) + '">' + esc(o.estado) + '</span></div></div>';
+  h += '<div class="card">' + o.linhas.map(function (l) {
+    return '<div class="lin row" style="align-items:flex-start">' + foto(l.ref) + '<div class="sp"><div class="b">' + esc(nomeCurto(l.produto)) + '</div><div class="mut">' + esc(l.ref) + ' · ' + esc(l.cor || 'sem cor') +
+      (l.pers1 ? ' · ' + esc(l.pers1) : '') + (l.pers2 ? ' + ' + esc(l.pers2) : '') + '</div>' +
+      '<div class="row num"><span class="sp">' + l.qtd + ' × ' + eur(l.unitC) + '</span><b>' + eur(l.totC) + '</b></div></div></div>';
+  }).join('') + '<div class="tot big"><span>Total c/ IVA</span><span class="num">' + eur(o.tC) + '</span></div>' +
+    '<div class="tot mut"><span>Total s/ IVA</span><span class="num">' + eur(o.tS) + '</span></div></div>';
+  h += '<div class="acts">' + (o.pdf ? '<button class="btn sec" onclick="abrirPdf(\'' + esc(o.num) + '\')">Abrir PDF</button>' : '') +
+    '<button class="btn" onclick="enviar(\'' + esc(o.num) + '\',\'' + esc(o.email) + '\')">Enviar ao cliente</button></div>' +
+    '<div class="acts"><button class="btn sec" onclick=\'editar(' + JSON.stringify(o.num) + ')\'>Editar</button></div>';
+  h += '<h2>Estado e faturação</h2><div class="card"><div class="g2"><div><label>Estado</label><select id="dEst">' +
+    D.estados.map(function (e) { return '<option' + (e === o.estado ? ' selected' : '') + '>' + e + '</option>'; }).join('') + '</select></div>' +
+    '<div><label>Nº Fatura</label><input id="dFat" value="' + esc(o.fatura) + '" placeholder="ex.: FT 2026/15"></div></div>' +
+    '<div class="mut" style="margin-top:6px">Com Nº de fatura passa a Faturado. Em produção / Faturado retira as peças do stock.</div>' +
+    '<div class="acts"><button class="btn ok" onclick="guardarEstado(\'' + esc(o.num) + '\')">Guardar estado</button></div></div>';
+  $('main').innerHTML = h;
+}
+function guardarEstado(num) {
+  call('apiEstado', num, $('dEst').value, $('dFat').value).then(function (r) {
+    msg(num + ': ' + r.estado + (r.fatura ? ' · fatura ' + r.fatura : '')); LISTA = []; STOCK = null; abrir(num);
+  });
+}
+function enviar(num, email) {
+  var e = prompt('Enviar o orçamento ' + num + ' para:', email || '');
+  if (!e) return;
+  call('apiEnviar', num, e).then(function (r) { msg('Enviado para ' + r.email); LISTA = []; abrir(num); });
+}
+
+// ---------------- editor ----------------
+function novo() {
+  ED = { numero: '', data: D.hoje, cliente: '', nif: '', email: '', tel: '', morada: '', cp: '', validade: 30, obs: '', desconto: '', estado: '', fatura: '', linhas: [] };
+  CALC = null; desenharEditor(); escolherProduto(null);
+}
+function editar(num) {
+  call('apiAbrir', num).then(function (o) {
+    ED = { numero: o.num, data: o.data, cliente: o.cliente, nif: o.nif, email: o.email, tel: o.tel, morada: o.morada, cp: o.cp,
+           validade: o.validade, obs: o.obs, desconto: o.desconto === '' ? '' : Math.round(o.desconto * 1000) / 10, estado: o.estado, fatura: o.fatura,
+           linhas: o.linhas.map(function (l) { return { produto: l.produto, ref: l.ref, cor: l.cor, qtd: l.qtd, margemAj: l.margemAj === '' ? '' : Math.round(l.margemAj * 1000) / 10,
+             pers1: l.pers1, precoAj1: l.precoAj1, pers2: l.pers2, precoAj2: l.precoAj2 }; }) };
+    CALC = null; desenharEditor();
+  });
+}
+function opts(lista, sel, vazio) {
+  return (vazio !== undefined ? '<option value="">' + esc(vazio) + '</option>' : '') + lista.map(function (o) {
+    var v = typeof o === 'string' ? o : o[0], t = typeof o === 'string' ? o : o[1];
+    return '<option value="' + esc(v) + '"' + (v === sel ? ' selected' : '') + '>' + esc(t) + '</option>';
+  }).join('');
+}
+function coresDe(ref) { return (D.cores[base(ref)] || []).map(function (c) { return [limpaCor(c), c]; }); }
+function desenharEditor() {
+  navOn('n-novo'); $('titulo').textContent = ED.numero ? 'Editar ' + ED.numero : 'Novo orçamento';
+  var e = ED, h = '';
+  h += '<h2>Cliente</h2><div class="card"><label>Nome / Empresa</label><input id="eCli" list="dlCli" value="' + esc(e.cliente) + '" onchange="cliEscolhido()">' +
+    '<datalist id="dlCli">' + D.clientes.map(function (c) { return '<option value="' + esc(c[0]) + '">'; }).join('') + '</datalist>' +
+    '<div class="g2"><div><label>NIF</label><input id="eNif" inputmode="numeric" value="' + esc(e.nif) + '" onchange="nifEscrito()"></div>' +
+    '<div><label>Telefone</label><input id="eTel" inputmode="tel" value="' + esc(e.tel) + '"></div></div>' +
+    '<label>Email</label><input id="eEmail" type="email" value="' + esc(e.email) + '">' +
+    '<label>Morada</label><input id="eMor" value="' + esc(e.morada) + '"><label>CP / Localidade</label><input id="eCp" value="' + esc(e.cp) + '"></div>';
+  h += '<h2>Artigos</h2><div id="eLinhas"></div><button class="btn sec" style="width:100%" onclick="escolherProduto(null)">＋ Adicionar artigo</button>';
+  h += '<h2>Condições</h2><div class="card"><div class="g3"><div><label>Data</label><input id="eData" type="date" value="' + esc(e.data) + '"></div>' +
+    '<div><label>Validade (dias)</label><input id="eVal" type="number" value="' + esc(e.validade) + '"></div>' +
+    '<div><label>Desconto %</label><input id="eDesc" type="number" step="0.5" value="' + esc(e.desconto) + '"></div></div>' +
+    '<label>Obs. para o cliente</label><input id="eObs" maxlength="80" value="' + esc(e.obs) + '" placeholder="ex.: Prazo de entrega: 10 dias úteis">' +
+    '<div class="g2"><div><label>Estado</label><select id="eEst">' + opts(D.estados, e.estado, '(Rascunho)') + '</select></div>' +
+    '<div><label>Nº Fatura</label><input id="eFat" value="' + esc(e.fatura) + '"></div></div></div>';
+  h += '<div class="card" id="eTot"></div>';
+  h += '<div class="acts"><button class="btn sec" onclick="calcular(false)">Calcular</button><button class="btn ok" onclick="calcular(true)">Guardar + PDF</button></div><div id="eDepois"></div>';
+  $('main').innerHTML = h; desenharLinhas(); desenharTotais();
+}
+function desenharLinhas() {
+  var p = D.pers;
+  $('eLinhas').innerHTML = ED.linhas.length ? ED.linhas.map(function (l, i) {
+    var c = CALC && CALC.linhas[i], cores = coresDe(l.ref);
+    if (l.cor && !cores.some(function (o) { return o[0] === l.cor; })) cores.unshift([l.cor, l.cor]);
+    return '<div class="card"><div class="row">' + foto(l.ref) + '<button class="prod-btn sp" onclick="escolherProduto(' + i + ')">' + esc(l.produto) + '</button><button class="x" onclick="tirar(' + i + ')">✕</button></div>' +
+      '<div class="g2"><div><label>Cor</label>' + (cores.length ? '<select onchange="ED.linhas[' + i + '].cor=this.value;mudou()">' + opts(cores, l.cor, '—') + '</select>'
+        : '<input value="' + esc(l.cor) + '" onchange="ED.linhas[' + i + '].cor=this.value;mudou()">') + '</div>' +
+      '<div><label>Quantidade</label><input type="number" inputmode="numeric" min="1" value="' + esc(l.qtd) + '" onchange="ED.linhas[' + i + '].qtd=Number(this.value)||\'\';mudou()"></div></div>' +
+      '<div class="g2"><div><label>Personalização 1</label><select onchange="ED.linhas[' + i + '].pers1=this.value;mudou()">' + opts(p, l.pers1, '—') + '</select></div>' +
+      '<div><label>Personalização 2</label><select onchange="ED.linhas[' + i + '].pers2=this.value;mudou()">' + opts(p, l.pers2, '—') + '</select></div></div>' +
+      '<details' + (l.margemAj !== '' || l.precoAj1 !== '' || l.precoAj2 !== '' ? ' open' : '') + '><summary>Ajustes (margem / preço personalização)</summary><div class="g3">' +
+      '<div><label>Margem %</label><input type="number" step="1" value="' + esc(l.margemAj) + '" placeholder="' + (c && c.margem !== '' ? pct(c.margem) : 'tabela') + '" onchange="ED.linhas[' + i + '].margemAj=this.value===\'\'?\'\':Number(this.value);mudou()"></div>' +
+      '<div><label>Pers. 1 €/pç</label><input type="number" step="0.05" value="' + esc(l.precoAj1) + '" placeholder="' + (c && c.tab1 !== '' ? eur(c.tab1) : 'tabela') + '" onchange="ED.linhas[' + i + '].precoAj1=this.value===\'\'?\'\':Number(this.value);mudou()"></div>' +
+      '<div><label>Pers. 2 €/pç</label><input type="number" step="0.05" value="' + esc(l.precoAj2) + '" placeholder="' + (c && c.tab2 !== '' ? eur(c.tab2) : 'tabela') + '" onchange="ED.linhas[' + i + '].precoAj2=this.value===\'\'?\'\':Number(this.value);mudou()"></div>' +
+      '</div><div class="mut">Vazio = tabela. Personalização nunca abaixo de 1 €.</div></details>' +
+      (c ? '<div class="row num" style="margin-top:8px"><span class="sp mut">' + esc(c.escalao) + ' pç · peça ' + eur(c.pecaS) + ' + pers. ' + eur(c.persU) + ' s/IVA</span></div>' +
+        '<div class="row num"><span class="sp">' + l.qtd + ' × <b>' + eur(c.unitC) + '</b> c/IVA</span><b>' + eur(c.totC) + '</b></div>' : '') +
+      '</div>';
+  }).join('') : '<div class="vazio">Ainda sem artigos.</div>';
+}
+function desenharTotais() {
+  var t = $('eTot');
+  if (!CALC) { t.innerHTML = '<div class="mut">Carrega em <b>Calcular</b> para ver os preços (são os da folha, com as mesmas regras).</div>'; return; }
+  t.innerHTML = '<div class="tot"><span>Subtotal s/ IVA</span><span class="num">' + eur(CALC.subtotal) + '</span></div>' +
+    (CALC.desc ? '<div class="tot"><span>Desconto</span><span class="num">' + eur(CALC.desc) + '</span></div>' : '') +
+    '<div class="tot"><span>Total s/ IVA</span><span class="num">' + eur(CALC.totS) + '</span></div>' +
+    '<div class="tot big"><span>Total c/ IVA</span><span class="num">' + eur(CALC.totC) + '</span></div>';
+}
+function lerCampos() {
+  ED.cliente = $('eCli').value.trim(); ED.nif = $('eNif').value.trim(); ED.tel = $('eTel').value.trim(); ED.email = $('eEmail').value.trim();
+  ED.morada = $('eMor').value.trim(); ED.cp = $('eCp').value.trim(); ED.data = $('eData').value; ED.validade = $('eVal').value;
+  ED.desconto = $('eDesc').value; ED.obs = $('eObs').value; ED.estado = $('eEst').value; ED.fatura = $('eFat').value.trim();
+}
+function mudou() { if (CALC) { CALC = null; desenharLinhas(); desenharTotais(); } }
+function tirar(i) { ED.linhas.splice(i, 1); CALC = null; desenharLinhas(); desenharTotais(); }
+function cliEscolhido() {
+  var n = $('eCli').value.trim().toLowerCase(), c = D.clientes.filter(function (x) { return x[0].toLowerCase() === n; })[0];
+  if (!c) return;
+  [['eNif', 1], ['eEmail', 2], ['eTel', 3], ['eMor', 4], ['eCp', 5]].forEach(function (p) { if (c[p[1]]) $(p[0]).value = c[p[1]]; });
+}
+function nifEscrito() {
+  var n = $('eNif').value.replace(/\D/g, '');
+  if (!n || n === '999999990') return;
+  var c = D.clientes.filter(function (x) { return x[1].replace(/\D/g, '') === n; })[0];
+  if (!c) { msg('NIF novo — o cliente é criado ao guardar.'); return; }
+  [['eCli', 0], ['eEmail', 2], ['eTel', 3], ['eMor', 4], ['eCp', 5]].forEach(function (p) { if (!$(p[0]).value && c[p[1]]) $(p[0]).value = c[p[1]]; });
+  msg('Cliente encontrado: ' + c[0]);
+}
+function payload(forcar) {
+  return { numero: ED.numero, data: ED.data, cliente: ED.cliente, nif: ED.nif, email: ED.email, tel: ED.tel, morada: ED.morada, cp: ED.cp,
+    validade: ED.validade, obs: ED.obs, desconto: ED.desconto === '' ? '' : Number(ED.desconto) / 100, estado: ED.estado, fatura: ED.fatura, forcar: !!forcar,
+    linhas: ED.linhas.map(function (l) { return { produto: l.produto, cor: l.cor, qtd: l.qtd, margemAj: l.margemAj === '' ? '' : Number(l.margemAj) / 100,
+      pers1: l.pers1, precoAj1: l.precoAj1, pers2: l.pers2, precoAj2: l.precoAj2 }; }) };
+}
+function calcular(guardar, forcar) {
+  lerCampos();
+  if (!ED.linhas.length) { msg('Adiciona pelo menos um artigo.', true); return; }
+  if (ED.linhas.some(function (l) { return !l.qtd; })) { msg('Falta a quantidade num artigo.', true); return; }
+  if (guardar && !ED.cliente) { msg('Falta o nome do cliente.', true); return; }
+  call('apiCalcular', payload(forcar), guardar).then(function (r) {
+    if (!r.ok && r.ocupado) { if (confirm(r.msg + '\n\nContinuar?')) calcular(guardar, true); return; }
+    if (!r.ok) { msg(r.msg, true); return; }
+    ED.numero = r.numero; CALC = r; $('titulo').textContent = (r.guardado ? '' : 'Rascunho ') + r.numero;
+    desenharLinhas(); desenharTotais();
+    if (r.guardado) {
+      LISTA = []; STOCK = null;
+      if (r.estado) { ED.estado = r.estado; $('eEst').value = r.estado; }
+      msg('Guardado: ' + r.numero + (r.cliMsg ? ' · ' + r.cliMsg : '') + (r.msgs && r.msgs.length ? '\n' + r.msgs.join('\n') : ''));
+      $('eDepois').innerHTML = '<div class="acts">' + (r.pdf ? '<button class="btn sec" onclick="abrirPdf(\'' + esc(r.numero) + '\')">Abrir PDF</button>' : '') +
+        '<button class="btn" onclick="enviar(\'' + esc(r.numero) + '\',\'' + esc(ED.email) + '\')">Enviar ao cliente</button></div>';
+      call('apiInit').then(function (d) { D = d; });
+    }
+  });
+}
+
+// ---------------- escolher produto (lista agrupada, ★ em stock primeiro) ----------------
+function escolherProduto(i) {
+  PICK = { i: i, cb: null }; abrirModal();
+}
+function abrirModal() { $('mq').value = ''; $('modal').style.display = 'block'; filtrarModal(); setTimeout(function () { $('mq').focus(); }, 50); }
+function fecharModal() { $('modal').style.display = 'none'; }
+function filtrarModal() {
+  var q = norm($('mq').value), h = [], grupo = null, n = 0;
+  D.produtos.forEach(function (p, k) {
+    if (!p[1]) { grupo = p[0]; return; }
+    if (q && norm(p[0]).indexOf(q) < 0) return;
+    if (n >= 250) return;
+    if (grupo !== null) { h.push('<div class="grp">' + esc(grupo.replace(/━/g, '').trim()) + '</div>'); grupo = null; }
+    var s = p[0].indexOf(STK) === 0, txt = s ? limpaProd(p[0]) : p[0], st = s ? p[0].substring(2, p[0].indexOf(SEP)) : '';
+    h.push('<div class="it" onclick="produtoEscolhido(' + k + ')">' + foto(p[1]) + '<div class="sp">' + esc(txt) + (st ? ' <span class="stk">★ ' + esc(st) + '</span>' : '') + '</div></div>');
+    n++;
+  });
+  $('mbd').innerHTML = h.join('') || '<div class="vazio">Nada encontrado.</div>';
+}
+function produtoEscolhido(k) {
+  var p = D.produtos[k], lab = limpaProd(p[0]), ref = p[1];
+  fecharModal();
+  if (PICK.cb) { PICK.cb(lab, ref); return; }
+  var cores = coresDe(ref), corStock = (D.cores[base(ref)] || []).filter(function (c) { return c.indexOf(STK) === 0; })[0];
+  if (PICK.i === null) {
+    lerCampos();
+    ED.linhas.push({ produto: lab, ref: ref, cor: corStock ? limpaCor(corStock) : '', qtd: '', margemAj: '', pers1: '', precoAj1: '', pers2: '', precoAj2: '' });
+  } else {
+    var l = ED.linhas[PICK.i]; l.produto = lab; l.ref = ref;
+    if (l.cor && !cores.some(function (o) { return o[0] === l.cor; })) l.cor = '';
+  }
+  CALC = null; desenharLinhas(); desenharTotais();
+}
+
+// ---------------- consulta ----------------
+var CONS = { lab: '', ref: '', qtd: 1, r: null };
+function irConsulta() { navOn('n-cons'); $('titulo').textContent = 'Consulta de preços'; desenharConsulta(); }
+function desenharConsulta() {
+  var r = CONS.r, h = '<div class="card"><label>Produto</label><div class="row">' + (CONS.ref ? foto(CONS.ref, true) : '') + '<button class="prod-btn sp" onclick="consProduto()">' + esc(CONS.lab || 'Escolher produto…') + '</button></div>' +
+    '<label>Quantidade</label><input type="number" inputmode="numeric" min="1" value="' + CONS.qtd + '" onchange="CONS.qtd=Number(this.value)||1;consultar()"></div>';
+  if (r && r.ok) {
+    h += '<div class="card"><div class="mut">' + esc(r.ref) + ' · escalão ' + r.escalao + ' pç</div>' +
+      '<div class="tot"><span>Custo</span><span class="num">' + eur(r.custo) + '</span></div>' +
+      '<div class="tot"><span>Margem</span><span class="num">' + pct(r.margem) + '</span></div>' +
+      '<div class="tot"><span>Preço s/ IVA</span><span class="num">' + eur(r.pvS) + '</span></div>' +
+      '<div class="tot big"><span>Preço c/ IVA</span><span class="num">' + eur(r.pvC) + '</span></div>' +
+      '<div class="tot"><span>Em stock</span><span class="num stk">' + (r.stock ? r.stock + ' pç' : '—') + '</span></div>' +
+      (r.stockCores.length ? '<div class="mut">' + esc(r.stockCores.join(' · ')) + '</div>' : '') + '</div>' +
+      '<h2>Personalização (' + r.escalao + ' pç)</h2><div class="card">' + r.pers.map(function (p) {
+        var v = p[1] > 0 ? Math.max(r.minPers, p[1]) : 0;
+        return '<div class="tot"><span>' + esc(p[0]) + '</span><span class="num">' + eur(v) + ' · c/IVA ' + eur(Math.round(v * (1 + r.iva) * 100) / 100) + '</span></div>';
+      }).join('') + '</div>';
+  } else if (r) h += '<div class="card mut">' + esc(r.msg) + '</div>';
+  $('main').innerHTML = h;
+}
+function consProduto() { PICK = { i: null, cb: function (lab, ref) { CONS.lab = lab; CONS.ref = ref; consultar(); } }; abrirModal(); }
+function consultar() { if (!CONS.ref) { desenharConsulta(); return; } call('apiConsulta', CONS.ref, CONS.qtd).then(function (r) { CONS.r = r; desenharConsulta(); }); }
+
+// ---------------- stock ----------------
+var SBUSCA = '';
+function irStock() {
+  navOn('n-stock'); $('titulo').textContent = 'Stock';
+  if (!STOCK) call('apiStock').then(function (s) { STOCK = s; desenharStock(); }); else desenharStock();
+}
+function desenharStock() {
+  $('main').innerHTML = '<input placeholder="Procurar referência, produto ou cor…" value="' + esc(SBUSCA) + '" oninput="SBUSCA=this.value;itensStock()"><div style="height:8px"></div><div id="sItens"></div>';
+  itensStock();
+}
+function itensStock() {
+  var q = norm(SBUSCA), g = null, h = '';
+  var l = STOCK.filter(function (s) { return !q || norm(s.ref + ' ' + s.produto + ' ' + s.cor).indexOf(q) >= 0; });
+  l.forEach(function (s) {
+    if (s.grupo !== g) { if (g !== null) h += '</div>'; g = s.grupo; h += '<h2>' + esc(g) + '</h2><div class="card">'; }
+    h += '<div class="lin"><div class="row"><div class="sp"><div class="b">' + esc(s.ref) + ' · ' + esc(s.cor) + '</div><div class="mut">' + esc(s.produto) +
+      ' · comprado ' + s.comp + ' · vendido ' + s.vend + '</div></div><div class="b num ' + (s.stock > 0 ? 'stk' : 'mut') + '" style="font-size:16px">' + s.stock + '</div></div></div>';
+  });
+  $('sItens').innerHTML = l.length ? h + '</div>' : '<div class="vazio">Sem stock registado. As compras lançam-se na aba Proformas.</div>';
+}
+
+iniciar();
+</script>
+</body>
+</html>
