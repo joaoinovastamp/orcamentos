@@ -8,6 +8,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2714%27 fill=%27%231F3864%27/%3E%3Ctext x=%2732%27 y=%2743%27 font-size=%2730%27 text-anchor=%27middle%27 fill=%27white%27 font-family=%27Arial%27 font-weight=%27bold%27%3EOR%3C/text%3E%3C/svg%3E">
 <title>INOVASTAMP Orçamentos</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <style>
   :root { --azul:#1F3864; --azul2:#2E5597; --fundo:#F3F5F9; --cartao:#fff; --txt:#1c2330; --mut:#6b7385; --linha:#e3e7ef;
           --verde:#1E8E5A; --amarelo:#FFF6C2; --verm:#C0392B; --laranja:#D9822B; }
@@ -408,6 +410,7 @@ function itensStock() {
 }
 
 iniciar();
+if ('serviceWorker' in navigator) { window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); }); }
 </script>
 </body>
 </html>
