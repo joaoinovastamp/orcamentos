@@ -181,7 +181,7 @@ function irLista(rec) {
 }
 function desenharLista() {
   var est = ['Todos'].concat(D.estados);
-  var h = '<input id="busca" placeholder="Procurar cliente ou nº…" value="' + esc(BUSCA) + '" oninput="BUSCA=this.value;desenharItens()">' +
+  var h = separadores('lista') + '<input id="busca" placeholder="Procurar cliente ou nº…" value="' + esc(BUSCA) + '" oninput="BUSCA=this.value;desenharItens()">' +
     '<div class="chips">' + est.map(function (e) { return '<button class="chip' + (e === FILTRO ? ' on' : '') + '" onclick="FILTRO=\'' + e + '\';desenharLista()">' + esc(e) + '</button>'; }).join('') + '</div><div id="itens"></div>';
   $('main').innerHTML = h; desenharItens();
 }
@@ -229,7 +229,9 @@ function desenharDetalhe(o) {
     '<button class="btn" onclick="enviar(' + n + ',' + JSON.stringify(o.email || '').replace(/"/g, '&quot;') + ')">Enviar por email</button></div>' +
     (o.pdf ? '<div class="acts"><button class="btn wa" onclick="whatsapp(' + n + ')">WhatsApp</button></div><div id="waZona"></div>' : '') +
     '<div class="acts"><button class="btn sec" onclick="editar(' + n + ')">Editar</button><button class="btn sec" onclick="duplicar()">Duplicar</button>' +
-    '<button class="btn sec" onclick="fichaCliente(ATUAL.cliente, ATUAL.nif)">Ficha do cliente</button></div>';
+    '<button class="btn sec" onclick="fichaCliente(ATUAL.cliente, ATUAL.nif)">Ficha do cliente</button></div>' +
+    '<div class="acts"><button class="btn sec" onclick="maqueteDoOrc()">✎ Maquete deste orçamento</button></div>';
+  if (['Aceite', 'Em produção', 'Faturado'].indexOf(o.estado) >= 0) h += '<div id="prodZona"><div class="mut" style="margin:10px 2px">A carregar produção e pagamentos…</div></div>';
   if (['Aceite', 'Em produção'].indexOf(o.estado) >= 0) h += '<h2>O cliente mudou de ideias?</h2><div class="card"><div class="mut">' +
     'Para alterar artigos: <b>Editar</b>, muda o que for preciso e guarda — o orçamento volta a "Enviado" e reenvias (o link de aceitação continua o mesmo). ' +
     'Se já criaste a encomenda ao fornecedor, ajusta-a na aba Encomenda.</div><div class="acts">' +
@@ -243,8 +245,11 @@ function desenharDetalhe(o) {
     D.estados.map(function (e) { return '<option' + (e === o.estado ? ' selected' : '') + '>' + e + '</option>'; }).join('') + '</select></div>' +
     '<div><label>Nº Fatura</label><input id="dFat" value="' + esc(o.fatura) + '" placeholder="ex.: FT 2026/15"></div></div>' +
     '<div class="mut" style="margin-top:6px">Com Nº de fatura passa a Faturado. Em produção / Faturado retira as peças do stock.</div>' +
-    '<div class="acts"><button class="btn ok" onclick="guardarEstado(\'' + esc(o.num) + '\')">Guardar estado</button></div></div>';
+    '<div class="acts"><button class="btn ok" onclick="guardarEstado(\'' + esc(o.num) + '\')">Guardar estado</button></div></div>' +
+    '<h2>Mensagem ao cliente</h2><div class="card"><div class="acts"><button class="btn sec" onclick="mensagem(\'sinal\')">Pedir sinal</button>' +
+    '<button class="btn sec" onclick="mensagem(\'pronto\')">Pronto p/ levantar</button><button class="btn sec" onclick="mensagem(\'pagar\')">Lembrar pagamento</button></div><div id="msgZona"></div></div>';
   $('main').innerHTML = h;
+  if ($('prodZona')) carregarProd(o.num);
 }
 function guardarEstado(num) {
   call('apiEstado', num, $('dEst').value, $('dFat').value).then(function (r) {
@@ -684,7 +689,12 @@ function irMaquete() {
   navOn('n-maq'); $('titulo').textContent = 'Maquete e DTF';
   var L = ladoAtual(), foto = MQ.modo === 'foto';
   var h = '<div class="chips"><button class="chip' + (!foto ? ' on' : '') + '" onclick="MQ.modo=\'modelo\';irMaquete()">Modelo (frente e costas)</button>' +
-    '<button class="chip' + (foto ? ' on' : '') + '" onclick="MQ.modo=\'foto\';irMaquete()">Foto do catálogo</button></div><div class="card">';
+    '<button class="chip' + (foto ? ' on' : '') + '" onclick="MQ.modo=\'foto\';irMaquete()">Foto do catálogo</button></div>' +
+    '<div class="card"><div class="g2"><div><label>Cliente</label><input id="mqCli" list="dlMqCli" value="' + esc(MQ.cli ? MQ.cli.nome : '') + '" onchange="mqEscolherCliente(this.value)">' +
+    '<datalist id="dlMqCli">' + D.clientes.map(function (c) { return '<option value="' + esc(c[0]) + '">'; }).join('') + '</datalist></div>' +
+    '<div><label>Orçamento</label><input id="mqOrc" value="' + esc(MQ.orc || '') + '" placeholder="ORC-2026-…" autocapitalize="characters" onchange="MQ.orc=this.value.trim().toUpperCase()"></div></div>' +
+    '<div class="acts"><button class="btn sec" onclick="mqLogos()">Logótipos do cliente</button>' + (L.des && L.src ? '<button class="btn sec" onclick="mqGuardarLogo()">Guardar desenho no cliente</button>' : '') + '</div><div id="logoZona"></div>' +
+    '<div class="acts"><button class="btn sec" onclick="mqGuardarOrc()">Guardar maquete no orçamento</button></div><div class="mut">A maquete guardada no orçamento vai na ficha de produção.</div></div><div class="card">';
   if (foto) {
     h += '<label>Peça</label><div class="row"><button class="prod-btn sp" onclick="mqProduto()">' + esc(MQ.lab || 'Escolher produto…') + '</button></div>' +
       '<div class="acts"><label class="btn sec" style="text-align:center;margin:0">Foto própria<input type="file" accept="image/*" style="display:none" onchange="mqFotoPropria(this)"></label></div>';
@@ -726,10 +736,42 @@ function mqCarregarFoto() {
 }
 function mqLerImagem(input, cb) {
   var f = input.files && input.files[0]; if (!f) return;
-  var rd = new FileReader(); rd.onload = function () { var im = new Image(); im.onload = function () { cb(im); }; im.src = rd.result; }; rd.readAsDataURL(f);
+  var rd = new FileReader(); rd.onload = function () { var im = new Image(); im.onload = function () { cb(im, rd.result, f.name, f.type); }; im.src = rd.result; }; rd.readAsDataURL(f);
 }
 function mqFotoPropria(inp) { mqLerImagem(inp, function (im) { MQ.peca = im; if (!MQ.lab) MQ.lab = 'Foto própria'; mqDesenhar(); }); }
-function mqDesenho(inp) { var L = ladoAtual(); mqLerImagem(inp, function (im) { L.orig = im; mqProcessarLado(L, function () { irMaquete(); dtfDoDesenho(); }); }); }
+function mqDesenho(inp) { var L = ladoAtual(); mqLerImagem(inp, function (im, src, nome, tipo) { L.orig = im; L.src = src; L.nome = nome; L.tipo = tipo; mqProcessarLado(L, function () { irMaquete(); dtfDoDesenho(); }); }); }
+function mqEscolherCliente(nome) {
+  var c = D.clientes.filter(function (x) { return x[0].toLowerCase() === String(nome).trim().toLowerCase(); })[0];
+  MQ.cli = c ? { nome: c[0], nif: c[1], email: c[2], tel: c[3] } : (nome ? { nome: nome.trim(), nif: '', email: '', tel: '' } : null);
+  $('logoZona').innerHTML = '';
+}
+var LOGOS = [];
+function mqLogos() {
+  if (!MQ.cli || !MQ.cli.nome) { msg('Escolhe primeiro o cliente.', true); return; }
+  call('apiLogos', MQ.cli.nome, MQ.cli.nif || '').then(function (l) {
+    LOGOS = l;
+    $('logoZona').innerHTML = l.length ? '<div class="row" style="flex-wrap:wrap;gap:8px;margin-top:8px">' + l.map(function (x, i) {
+      return '<img src="data:' + x.tipo + ';base64,' + x.b64 + '" title="' + esc(x.nome) + '" onclick="mqUsarLogo(' + i + ')" style="width:72px;height:72px;object-fit:contain;border:1px solid var(--linha);border-radius:8px;background:#fff;padding:4px">';
+    }).join('') + '</div><div class="mut">Toca num logótipo para o pôr na ' + (MQ.modo === 'foto' || MQ.lado === 'F' ? 'frente' : 'costas') + '.</div>' : '<div class="mut" style="margin-top:6px">Este cliente ainda não tem logótipos guardados.</div>';
+  });
+}
+function mqUsarLogo(i) {
+  var x = LOGOS[i], L = ladoAtual(), im = new Image();
+  im.onload = function () { L.orig = im; L.src = im.src; L.nome = x.nome; L.tipo = x.tipo; mqProcessarLado(L, function () { irMaquete(); dtfDoDesenho(); }); };
+  im.src = 'data:' + x.tipo + ';base64,' + x.b64;
+}
+function mqGuardarLogo() {
+  var L = ladoAtual(); if (!L.src) return;
+  if (!MQ.cli || !MQ.cli.nome) { msg('Escolhe primeiro o cliente.', true); return; }
+  call('apiLogoGuardar', MQ.cli.nome, MQ.cli.nif || '', String(L.src).split(',')[1], L.nome || 'logotipo.png', L.tipo || 'image/png').then(function (r) {
+    msg(r.ja ? 'Este logótipo já estava guardado no cliente.' : 'Logótipo guardado no cliente (' + r.pasta + ').');
+  });
+}
+function mqGuardarOrc() {
+  var n = (MQ.orc || '').trim(); if (!n) { msg('Indica o nº do orçamento (ex.: ORC-2026-0008).', true); return; }
+  if (!temDesenho()) { msg('Carrega primeiro o desenho do cliente.', true); return; }
+  mqB64(function (b64) { call('apiMaqueteGuardar', n, b64).then(function () { msg('Maquete guardada no orçamento ' + n + '. Vai na ficha de produção.'); }); });
+}
 function mqProcessar() { mqProcessarLado(MQ.L.F, function () { mqProcessarLado(MQ.L.C, function () { mqDesenhar(); dtfDoDesenho(); }); }); }
 function mqProcessarLado(L, cb) {
   var o = L.orig; if (!o) { cb(); return; }
@@ -873,10 +915,10 @@ function mqGuardar() {
   mqBlob(function (b) { var u = URL.createObjectURL(b), l = document.createElement('a'); l.href = u; l.download = mqNome(); document.body.appendChild(l); l.click(); l.remove(); setTimeout(function () { URL.revokeObjectURL(u); }, 60000); });
 }
 function mqB64(cb) { mqBlob(function (b) { var rd = new FileReader(); rd.onload = function () { cb(String(rd.result).split(',')[1], b); }; rd.readAsDataURL(b); }); }
-function mqCliente() { return (ED && ED.cliente) || ''; }
+function mqCliente() { return (MQ.cli && MQ.cli.nome) || (ED && ED.cliente) || ''; }
 function mqEmail() {
   if (!temDesenho()) { msg('Carrega primeiro o desenho do cliente.', true); return; }
-  var e = prompt('Enviar a maquete por email para:', (ED && ED.email) || ''); if (!e) return;
+  var e = prompt('Enviar a maquete por email para:', (MQ.cli && MQ.cli.email) || (ED && ED.email) || ''); if (!e) return;
   var cli = prompt('Nome do cliente (para o "Bom dia …", opcional):', mqCliente()); if (cli === null) return;
   mqB64(function (b64) { call('apiMaqueteEmail', e.trim(), b64, mqNome(), cli.trim()).then(function (r) { msg('Maquete enviada para ' + r.email); }); });
 }
@@ -885,7 +927,7 @@ function mqWhats() {
   mqBlob(function (b) {
     var f = new File([b], mqNome(), { type: 'image/png' });
     var pode = false; try { pode = navigator.canShare && navigator.canShare({ files: [f] }); } catch (x) {}
-    var tel = (ED && ED.tel) || '';
+    var tel = (MQ.cli && MQ.cli.tel) || (ED && ED.tel) || '';
     $('mqZona').innerHTML = '<div class="card">' + (pode ? '<button class="btn wa" style="width:100%" onclick="mqPartilhar()">Partilhar a imagem (escolhe WhatsApp)</button>' : '') +
       '<label>Telemóvel do cliente</label><input id="mqTel" inputmode="tel" value="' + esc(tel) + '" placeholder="9xx xxx xxx">' +
       '<button class="btn ' + (pode ? 'sec' : 'wa') + '" style="width:100%;margin-top:8px" onclick="mqWhatsLink()">Enviar link da imagem no WhatsApp</button>' +
@@ -961,6 +1003,8 @@ function dtfDaLinha(i) {
   var l = ED.linhas[i];
   var campo = /DTF/i.test(l.pers1 || '') || !l.pers1 ? 1 : 2;
   MQ.voltar = { i: i, campo: campo };
+  if (ED.numero) MQ.orc = ED.numero;
+  if (ED.cliente) MQ.cli = { nome: ED.cliente, nif: ED.nif, email: ED.email, tel: ED.tel };
   if (l.ref !== MQ.ref) { MQ.ref = l.ref; MQ.lab = l.produto; MQ.peca = null; }
   DTF.qtd = Number(l.qtd) || 1;
   irMaquete();
@@ -973,6 +1017,127 @@ function dtfUsar(pv) {
   l['precoAj' + v.campo] = Math.round(pv * 100) / 100;
   MQ.voltar = null; CALC = null; desenharEditor();
   msg('Preço do DTF (' + eur(pv) + '/pç) posto no artigo ' + (v.i + 1) + '. Carrega em Calcular.');
+}
+
+// ---------------- produção (quadro), por cobrar, ficha de produção, pagamentos, mensagens ----------------
+var PROD = null, PRODVER = 'quadro';
+function separadores(atual) {
+  return '<div class="chips">' + [['lista', 'Orçamentos', 'irLista()'], ['prod', 'Produção', 'irProducao()'], ['cobrar', 'Por cobrar', 'irCobrar()']].map(function (t) {
+    return '<button class="chip' + (t[0] === atual ? ' on' : '') + '" onclick="' + t[2] + '">' + t[1] + '</button>';
+  }).join('') + '</div>';
+}
+function carregarProducao(cb) { call('apiProducao').then(function (r) { PROD = r; cb(); }); }
+function irProducao() { navOn('n-lista'); $('titulo').textContent = 'Produção'; carregarProducao(desenharProducao); }
+function irCobrar() { navOn('n-lista'); $('titulo').textContent = 'Por cobrar'; carregarProducao(desenharCobrar); }
+function diasPara(iso) { if (!iso) return null; return Math.round((new Date(iso + 'T00:00:00') - new Date(PROD.hoje + 'T00:00:00')) / 86400000); }
+function infoEntrega(o) {
+  var d = diasPara(o.entrega); if (d === null) return '<span class="mut">sem data de entrega</span>';
+  if (o.fase === 'Entregue') return 'entregue';
+  return d < 0 ? '<span class="alerta">atrasado ' + (-d) + ' dia(s)</span>' : d === 0 ? '<span class="alerta">entrega hoje</span>' : 'entrega ' + dt(o.entrega) + (d <= 3 ? ' <span class="alerta">(' + d + ' d)</span>' : '');
+}
+function desenharProducao() {
+  var h = separadores('prod'), g = {};
+  PROD.lista.forEach(function (o) { (g[o.fase] = g[o.fase] || []).push(o); });
+  PROD.fases.forEach(function (f) {
+    var l = g[f] || []; if (f === 'Entregue') l = l.slice(-10).reverse();
+    h += '<h2>' + esc(f) + ' (' + (g[f] || []).length + ')</h2>';
+    h += l.length ? '<div class="card">' + l.map(function (o) {
+      var falta = Math.round((o.tC - o.pago) * 100) / 100;
+      return '<div class="lin" onclick="abrir(\'' + esc(o.num) + '\')"><div class="row"><div class="sp"><div class="b">' + esc(o.cliente) + '</div><div class="mut">' + esc(o.num) +
+        (o.op ? ' · ' + esc(o.op) : '') + ' · ' + o.qtd + ' pç · ' + infoEntrega(o) + '</div></div><div style="text-align:right"><div class="b num">' + eur(o.tC) + '</div>' +
+        (falta > 0.005 ? '<div class="mut num">falta ' + eur(falta) + '</div>' : '<div class="ok-t">pago</div>') + '</div></div>' +
+        (f !== 'Entregue' ? '<div class="acts" style="margin-top:4px">' + PROD.fases.filter(function (x) { return PROD.fases.indexOf(x) === PROD.fases.indexOf(f) + 1; }).map(function (x) {
+          return '<button class="btn lite" onclick="event.stopPropagation();mudarFase(\'' + esc(o.num) + '\',\'' + esc(x) + '\')">→ ' + esc(x) + '</button>';
+        }).join('') + '</div>' : '') + '</div>';
+    }).join('') + (f === 'Entregue' && (g[f] || []).length > 10 ? '<div class="mut">(últimos 10)</div>' : '') + '</div>' : '<div class="mut" style="margin:0 2px 8px">—</div>';
+  });
+  $('main').innerHTML = h;
+}
+function mudarFase(num, fase) {
+  var o = PROD.lista.filter(function (x) { return x.num === num; })[0]; if (!o) return;
+  call('apiProdGuardar', num, { fase: fase, entrega: o.entrega, notas: o.notas }).then(function (r) {
+    msg(num + ': ' + fase + (r.estado === 'Em produção' && o.estado === 'Aceite' ? ' (estado: Em produção)' : '')); LISTA = [];
+    if (fase === 'Pronto') { abrir(num); setTimeout(function () { if ($('msgZona')) mensagem('pronto'); }, 1500); } else irProducao();
+  });
+}
+function desenharCobrar() {
+  var l = PROD.lista.filter(function (o) { return o.tC - o.pago > 0.005; }), tot = l.reduce(function (a, o) { return a + o.tC - o.pago; }, 0);
+  var h = separadores('cobrar') + '<div class="card"><div class="tot big"><span>Total por cobrar</span><span class="num">' + eur(tot) + '</span></div><div class="mut">Orçamentos aceites, em produção ou faturados, menos os pagamentos registados.</div></div>';
+  h += l.length ? '<div class="card">' + l.map(function (o) {
+    return '<div class="lin row" onclick="abrir(\'' + esc(o.num) + '\')"><div class="sp"><div class="b">' + esc(o.cliente) + '</div><div class="mut">' + esc(o.num) + ' · ' + esc(o.fase) +
+      (o.fatura ? ' · Fat. ' + esc(o.fatura) : '') + ' · pago ' + eur(o.pago) + ' de ' + eur(o.tC) + '</div></div><div class="b num">' + eur(o.tC - o.pago) + '</div></div>';
+  }).join('') + '</div>' : '<div class="vazio">Nada por cobrar. 👍</div>';
+  $('main').innerHTML = h;
+}
+// --- no detalhe do orçamento ---
+var PR = null;
+function carregarProd(num) { call('apiProdAbrir', num).then(function (p) { PR = p; desenharProd(); }); }
+function desenharProd() {
+  var p = PR, z = $('prodZona'); if (!z || !ATUAL || p.num !== ATUAL.num) return;
+  var falta = Math.round((p.tC - p.pago) * 100) / 100;
+  var h = '<h2>Produção' + (p.op ? ' · ' + esc(p.op) : '') + '</h2><div class="card"><div class="g2"><div><label>Fase</label><select id="pFase">' + opts(p.fases, p.fase) + '</select></div>' +
+    '<div><label>Data de entrega</label><input id="pEnt" type="date" value="' + esc(p.entrega) + '"></div></div>' +
+    '<label>Notas de produção (oficina)</label><textarea id="pNotas" rows="2" placeholder="ex.: logótipo frente 25 cm, costas nome + nº">' + esc(p.notas) + '</textarea>' +
+    '<div class="acts"><button class="btn ok" onclick="guardarProd()">Guardar produção</button><button class="btn sec" onclick="fichaProducao()">Ficha de produção (PDF)</button></div>' +
+    '<div class="mut">' + (p.maquete ? '✓ Tem maquete — vai na ficha.' : 'Sem maquete: usa "✎ Maquete deste orçamento" e "Guardar no orçamento" para ir na ficha.') + '</div><div id="opZona"></div></div>';
+  h += '<h2>Pagamentos</h2><div class="card"><div class="tot"><span>Total c/ IVA</span><span class="num">' + eur(p.tC) + '</span></div>' +
+    '<div class="tot"><span>Pago</span><span class="num">' + eur(p.pago) + '</span></div>' +
+    '<div class="tot big"><span>' + (falta > 0.005 ? 'Falta' : 'Pago na totalidade') + '</span><span class="num">' + (falta > 0.005 ? eur(falta) : '✓') + '</span></div>' +
+    (p.pagamentos.length ? p.pagamentos.map(function (x) {
+      return '<div class="lin row"><div class="sp"><div class="b num">' + eur(x.valor) + '</div><div class="mut">' + dt(x.data) + (x.metodo ? ' · ' + esc(x.metodo) : '') + (x.nota ? ' · ' + esc(x.nota) : '') + '</div></div>' +
+        '<button class="x" onclick="apagarPag(' + x.linha + ')">✕</button></div>';
+    }).join('') : '') +
+    '<div class="g3" style="margin-top:6px"><div><label>Valor €</label><input id="pgV" type="number" step="0.01" inputmode="decimal" placeholder="' + (p.pago ? falta.toFixed(2) : (p.tC / 2).toFixed(2)) + '"></div>' +
+    '<div><label>Método</label><select id="pgM">' + opts(['MB Way', 'Transferência', 'Dinheiro', 'Multibanco', 'Cheque'], 'MB Way') + '</select></div>' +
+    '<div><label>Data</label><input id="pgD" type="date" value="' + esc(D.hoje) + '"></div></div><label>Nota</label><input id="pgN" placeholder="ex.: sinal 50%">' +
+    '<div class="acts"><button class="btn sec" onclick="registarPag()">Registar pagamento</button></div><div class="mut">Valor vazio = ' + (p.pago ? 'o que falta' : 'sinal de 50%') + '.</div></div>';
+  $('prodZona').innerHTML = h;
+}
+function guardarProd() {
+  call('apiProdGuardar', ATUAL.num, { fase: $('pFase').value, entrega: $('pEnt').value, notas: $('pNotas').value }).then(function (r) {
+    msg('Produção guardada: ' + r.fase); LISTA = []; if (r.estado !== ATUAL.estado) abrir(ATUAL.num); else carregarProd(ATUAL.num);
+  });
+}
+function registarPag() {
+  var v = $('pgV').value || $('pgV').placeholder;
+  if (!(Number(v) > 0)) { msg('Indica o valor.', true); return; }
+  call('apiPagamento', ATUAL.num, { valor: Number(v), metodo: $('pgM').value, data: $('pgD').value, nota: $('pgN').value }).then(function (p) { PR = p; desenharProd(); msg('Pagamento registado: ' + eur(Number(v))); });
+}
+function apagarPag(linha) {
+  if (!confirm('Apagar este pagamento?')) return;
+  call('apiPagamentoApagar', ATUAL.num, linha).then(function (p) { PR = p; desenharProd(); });
+}
+var OPPDF = null;
+function fichaProducao() {
+  call('apiFichaProducao', ATUAL.num).then(function (r) {
+    var bin = atob(r.b64), a = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
+    OPPDF = { nome: r.nome, a: a }; PR.op = r.op;
+    var pode = false; try { pode = navigator.canShare && navigator.canShare({ files: [new File([a], r.nome, { type: 'application/pdf' })] }); } catch (e) {}
+    $('opZona').innerHTML = '<div class="ok-t" style="margin-top:6px">✓ ' + esc(r.nome) + ' (guardada em "INOVASTAMP - Produção")</div><div class="acts"><button class="btn sec" onclick="opAbrir()">Abrir</button>' +
+      (pode ? '<button class="btn sec" onclick="opPartilhar()">Partilhar</button>' : '') + '</div>';
+  });
+}
+function opAbrir() { var url = URL.createObjectURL(new Blob([OPPDF.a], { type: 'application/pdf' })), l = document.createElement('a'); l.href = url; l.download = OPPDF.nome; l.target = '_blank'; document.body.appendChild(l); l.click(); l.remove(); }
+function opPartilhar() { navigator.share({ files: [new File([OPPDF.a], OPPDF.nome, { type: 'application/pdf' })], title: OPPDF.nome }).catch(function () {}); }
+// --- mensagens ao cliente (texto editável; envia por WhatsApp ou email) ---
+var MORADA = 'Travessa do Parque Industrial, nº 206, 4830-835 Vilela, Póvoa de Lanhoso';
+function mensagem(tipo) {
+  var o = ATUAL; if (!o) return;
+  var p = PR && PR.num === o.num ? PR : { tC: o.tC, pago: 0 }, falta = Math.max(0, Math.round((p.tC - p.pago) * 100) / 100), ola = 'Bom dia' + (o.cliente ? ' ' + o.cliente : '') + ',\n\n';
+  var t = tipo === 'sinal' ? ola + 'Obrigado pela adjudicação do orçamento ' + o.num + ' (' + eur(o.tC) + ' com IVA).\nPara avançarmos com a encomenda do material e a produção, agradecemos o sinal de 50% (' + eur(Math.round(o.tC / 2 * 100) / 100) + '), por MB Way ou transferência. Enviaremos a confirmação do prazo de entrega.\n\nObrigado,\nINOVASTAMP'
+    : tipo === 'pronto' ? ola + 'A sua encomenda (orçamento ' + o.num + ') está pronta para levantamento.\n' + (falta > 0.005 ? 'Valor em falta: ' + eur(falta) + '.\n' : '') + 'Morada: ' + MORADA + '.\n\nObrigado,\nINOVASTAMP'
+    : ola + 'Relembramos que está em falta o pagamento de ' + eur(falta) + ' referente ao orçamento ' + o.num + (o.fatura ? ' (fatura ' + o.fatura + ')' : '') + '.\nPode pagar por MB Way ou transferência. Se já efetuou o pagamento, por favor ignore esta mensagem.\n\nObrigado,\nINOVASTAMP';
+  var assunto = tipo === 'sinal' ? 'Orçamento ' + o.num + ' — sinal para avançar' : tipo === 'pronto' ? 'A sua encomenda está pronta — INOVASTAMP' : 'Pagamento em falta — orçamento ' + o.num;
+  $('msgZona').innerHTML = '<input id="mAss" value="' + esc(assunto) + '" style="margin-top:8px"><textarea id="mTxt" rows="8" style="margin-top:6px">' + esc(t) + '</textarea>' +
+    '<div class="acts"><button class="btn wa" onclick="msgWhats()">WhatsApp' + (o.tel ? ' (' + esc(o.tel) + ')' : '') + '</button><button class="btn" onclick="msgEmail()"' + (o.email ? '' : ' disabled') + '>Email</button></div>';
+}
+function msgWhats() { window.open('https://wa.me/' + telWa(ATUAL.tel) + '?text=' + encodeURIComponent($('mTxt').value), '_blank'); }
+function msgEmail() { call('apiEmailCliente', ATUAL.num, $('mAss').value, $('mTxt').value).then(function (r) { msg('Email enviado para ' + r.email); $('msgZona').innerHTML = ''; }); }
+// --- maquete a partir do orçamento ---
+function maqueteDoOrc() {
+  var o = ATUAL; if (!o) return;
+  MQ.orc = o.num; MQ.cli = { nome: o.cliente, nif: o.nif, email: o.email, tel: o.tel };
+  irMaquete();
 }
 
 // ---------------- encomendas ao fornecedor ----------------
