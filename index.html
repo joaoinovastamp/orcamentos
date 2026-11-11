@@ -71,6 +71,15 @@
   #msg.err { background:var(--verm); }
   .vazio { text-align:center; color:var(--mut); padding:30px 10px; }
   details summary { color:var(--azul2); font-size:13px; margin-top:8px; }
+  .lucro { background:#eef8f2; border:1px solid #cfe9da; }
+  .lucro.mau { background:#fdf0ee; border-color:#f3c9c3; }
+  .alerta { color:var(--verm); font-weight:600; font-size:13px; }
+  .ok-t { color:var(--verde); font-weight:600; font-size:12px; }
+  .btn.wa { background:#25D366; }
+  .kpi { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .kpi .card { margin:0; }
+  .kpi .v { font-size:18px; font-weight:700; color:var(--azul); }
+  .sel { display:flex; gap:8px; align-items:center; border-top:1px solid var(--linha); padding:7px 0; }
 </style>
 </head>
 <body>
@@ -80,6 +89,7 @@
   <button id="n-lista" onclick="irLista()"><b>☰</b>Orçamentos</button>
   <button id="n-novo" onclick="novo()"><b>＋</b>Novo</button>
   <button id="n-cons" onclick="irConsulta()"><b>€</b>Consulta</button>
+  <button id="n-res" onclick="irResumo()"><b>▤</b>Resumo</button>
   <button id="n-stock" onclick="irStock()"><b>▦</b>Stock</button>
 </nav>
 <div id="modal"><div class="box"><div class="hd"><input id="mq" placeholder="Procurar produto ou referência…" oninput="filtrarModal()"><button class="btn sec" onclick="fecharModal()">Fechar</button></div><div class="bd" id="mbd"></div></div></div>
@@ -107,8 +117,10 @@ function nomeCurto(lab) { var i = lab.indexOf(' — '); return i > 0 ? lab.subst
 
 function msg(t, err) { var m = $('msg'); m.textContent = t; m.className = err ? 'err' : ''; m.style.display = 'block'; clearTimeout(msg.t); msg.t = setTimeout(function () { m.style.display = 'none'; }, err ? 7000 : 3500); }
 function carregando(on) { $('load').style.display = on ? 'flex' : 'none'; }
-var PIN = '';
-try { PIN = localStorage.getItem('inovastamp_pin') || ''; } catch (e) {}
+var PIN = '', GPIN = '';
+try { PIN = localStorage.getItem('inovastamp_pin') || ''; GPIN = localStorage.getItem('inovastamp_gestor') || ''; } catch (e) {}
+function gestor() { return !!GPIN; }
+var MARGEM_ALERTA = 0.25;
 var API = 'https://script.google.com/macros/s/AKfycby0OuenHSPaxgmop0q1uMh_Y3OxLCV4KYdx8WnrP76cjZiPFaEZFXrYqXw42jdv3qhwrg/exec';
 function call(fn) {
   var args = [PIN].concat(Array.prototype.slice.call(arguments, 1));
@@ -137,7 +149,7 @@ function abrirPdf(num) {
     setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
   });
 }
-function navOn(id) { ['n-lista','n-novo','n-cons','n-stock'].forEach(function (n) { $(n).className = n === id ? 'on' : ''; }); window.scrollTo(0, 0); }
+function navOn(id) { ['n-lista','n-novo','n-cons','n-res','n-stock'].forEach(function (n) { $(n).className = n === id ? 'on' : ''; }); window.scrollTo(0, 0); }
 
 // ---------------- arranque ----------------
 function iniciar() { if (!PIN) { entrar(); return; } call('apiInit').then(function (d) { D = d; irLista(true); }); }
@@ -179,7 +191,20 @@ function desenharItens() {
 }
 
 // ---------------- detalhe ----------------
-function abrir(num) { call('apiAbrir', num).then(function (o) { desenharDetalhe(o); }); }
+var ATUAL = null;
+function abrir(num) { call('apiAbrir', num).then(function (o) { ATUAL = o; desenharDetalhe(o); }); }
+// lucro (só no modo gestor): total s/ IVA − custo das peças (a personalização não tem custo registado)
+function blocoLucro(totS, linhas, calc) {
+  if (!gestor()) return '';
+  var custo = 0;
+  linhas.forEach(function (l, i) { var c = calc ? calc[i] : l; custo += (Number(c && c.custo) || 0) * (Number(l.qtd) || 0); });
+  var lucro = Math.round((totS - custo) * 100) / 100, p = totS ? lucro / totS : 0, mau = p < MARGEM_ALERTA;
+  return '<div class="card lucro' + (mau ? ' mau' : '') + '"><div class="mut">🔒 Só no modo gestor</div>' +
+    '<div class="tot"><span>Custo das peças</span><span class="num">' + eur(custo) + '</span></div>' +
+    '<div class="tot big"><span>Lucro bruto</span><span class="num">' + eur(lucro) + ' · ' + pct(p) + '</span></div>' +
+    (mau ? '<div class="alerta">⚠ Margem abaixo de ' + pct(MARGEM_ALERTA) + ' do total s/ IVA.</div>' : '') +
+    '<div class="mut">Sem o custo da personalização (tinta, DTF, mão de obra).</div></div>';
+}
 function desenharDetalhe(o) {
   navOn('n-lista'); $('titulo').textContent = o.num;
   var h = '<div class="card"><div class="row"><div class="sp"><div class="b" style="font-size:17px">' + esc(o.cliente) + '</div>' +
@@ -189,12 +214,22 @@ function desenharDetalhe(o) {
   h += '<div class="card">' + o.linhas.map(function (l) {
     return '<div class="lin row" style="align-items:flex-start">' + foto(l.ref) + '<div class="sp"><div class="b">' + esc(nomeCurto(l.produto)) + '</div><div class="mut">' + esc(l.ref) + ' · ' + esc(l.cor || 'sem cor') +
       (l.pers1 ? ' · ' + esc(l.pers1) : '') + (l.pers2 ? ' + ' + esc(l.pers2) : '') + '</div>' +
+      (l.tam ? '<div class="mut">Tamanhos: ' + esc(l.tam) + '</div>' : '') +
       '<div class="row num"><span class="sp">' + l.qtd + ' × ' + eur(l.unitC) + '</span><b>' + eur(l.totC) + '</b></div></div></div>';
   }).join('') + '<div class="tot big"><span>Total c/ IVA</span><span class="num">' + eur(o.tC) + '</span></div>' +
     '<div class="tot mut"><span>Total s/ IVA</span><span class="num">' + eur(o.tS) + '</span></div></div>';
-  h += '<div class="acts">' + (o.pdf ? '<button class="btn sec" onclick="abrirPdf(\'' + esc(o.num) + '\')">Abrir PDF</button>' : '') +
-    '<button class="btn" onclick="enviar(\'' + esc(o.num) + '\',\'' + esc(o.email) + '\')">Enviar ao cliente</button></div>' +
-    '<div class="acts"><button class="btn sec" onclick=\'editar(' + JSON.stringify(o.num) + ')\'>Editar</button></div>';
+  h += blocoLucro(o.tS, o.linhas);
+  var n = JSON.stringify(o.num).replace(/"/g, '&quot;');
+  h += '<div class="acts">' + (o.pdf ? '<button class="btn sec" onclick="abrirPdf(' + n + ')">Abrir PDF</button>' : '') +
+    '<button class="btn" onclick="enviar(' + n + ',' + JSON.stringify(o.email || '').replace(/"/g, '&quot;') + ')">Enviar por email</button></div>' +
+    (o.pdf ? '<div class="acts"><button class="btn wa" onclick="whatsapp(' + n + ')">WhatsApp</button></div><div id="waZona"></div>' : '') +
+    '<div class="acts"><button class="btn sec" onclick="editar(' + n + ')">Editar</button><button class="btn sec" onclick="duplicar()">Duplicar</button>' +
+    '<button class="btn sec" onclick="fichaCliente(ATUAL.cliente, ATUAL.nif)">Ficha do cliente</button></div>';
+  var forn = {};
+  o.linhas.forEach(function (l) { forn[String(l.produto).indexOf('· Roly') >= 0 ? 'Roly' : 'Velilla'] = true; });
+  h += '<h2>Encomenda ao fornecedor</h2><div class="card"><div class="mut">Passa os artigos deste orçamento para a aba Encomenda (separados por tamanho, se os tiveres indicado) e guarda-a como rascunho. ' +
+    'Revês e envias na folha (INOVASTAMP › Enviar encomenda).</div><div class="acts">' +
+    Object.keys(forn).map(function (f) { return '<button class="btn sec" onclick="criarEncomenda(' + n + ',\'' + f + '\')">Criar encomenda ' + f + '</button>'; }).join('') + '</div></div>';
   h += '<h2>Estado e faturação</h2><div class="card"><div class="g2"><div><label>Estado</label><select id="dEst">' +
     D.estados.map(function (e) { return '<option' + (e === o.estado ? ' selected' : '') + '>' + e + '</option>'; }).join('') + '</select></div>' +
     '<div><label>Nº Fatura</label><input id="dFat" value="' + esc(o.fatura) + '" placeholder="ex.: FT 2026/15"></div></div>' +
@@ -213,17 +248,82 @@ function enviar(num, email) {
   call('apiEnviar', num, e).then(function (r) { msg('Enviado para ' + r.email); LISTA = []; abrir(num); });
 }
 
+// ---------------- WhatsApp ----------------
+// 1.º toque: prepara o PDF; 2.º toque: partilha (o telemóvel exige um toque para abrir a partilha)
+var WA = null;
+function telWa(t) {
+  var d = String(t || '').replace(/\D/g, '');
+  if (d.indexOf('00') === 0) d = d.substring(2);
+  if (d.length === 9) d = '351' + d;
+  return d;
+}
+function textoWa(r) {
+  return 'Bom dia' + (r.cliente ? ' ' + r.cliente : '') + ',\nsegue o orçamento ' + r.num + ' da INOVASTAMP: ' + eur(r.tC) + ' com IVA (' + eur(r.tS) + ' + IVA).\n' +
+    'Para aceitar, basta carregar aqui: ' + r.aceitar + '\nQualquer dúvida, estamos ao dispor.';
+}
+function whatsapp(num) {
+  call('apiPartilha', num, false).then(function (r) {
+    var bin = atob(r.b64), a = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
+    WA = { r: r, file: null };
+    try { WA.file = new File([a], r.nome, { type: 'application/pdf' }); } catch (e) {}
+    var podeFicheiro = WA.file && navigator.canShare && navigator.canShare({ files: [WA.file] });
+    $('waZona').innerHTML = '<div class="card">' +
+      (podeFicheiro ? '<button class="btn wa" style="width:100%" onclick="waPartilhar()">Partilhar o PDF (escolhe WhatsApp)</button>' +
+        '<div class="mut" style="margin-top:6px">Vai o PDF e a mensagem com o link para aceitar.</div>' : '') +
+      '<button class="btn ' + (podeFicheiro ? 'sec' : 'wa') + '" style="width:100%;margin-top:8px" onclick="waLink()">Enviar link do PDF no WhatsApp' + (r.tel ? ' (' + esc(r.tel) + ')' : '') + '</button>' +
+      '<div class="mut" style="margin-top:6px">O link deixa o PDF visível a quem o tiver.</div></div>';
+  });
+}
+function waPartilhar() {
+  if (!WA) return;
+  navigator.share({ files: [WA.file], text: textoWa(WA.r), title: 'Orçamento ' + WA.r.num })
+    .then(function () { marcarEnviado(WA.r.num); }).catch(function () {});
+}
+function waLink() {
+  if (!WA) return;
+  call('apiPartilha', WA.r.num, true).then(function (r) {
+    var url = 'https://wa.me/' + telWa(r.tel) + '?text=' + encodeURIComponent(textoWa(r) + '\nPDF: ' + r.pdfUrl);
+    $('waZona').innerHTML = '<div class="card"><a class="btn wa" style="display:block;text-align:center;text-decoration:none" href="' + esc(url) +
+      '" target="_blank" onclick="setTimeout(function(){marcarEnviado(\'' + esc(r.num) + '\')},800)">Abrir o WhatsApp</a></div>';
+  });
+}
+function marcarEnviado(num) {
+  if (!ATUAL || ATUAL.num !== num || (ATUAL.estado && ATUAL.estado !== 'Rascunho')) return;
+  if (!confirm('Marcar o orçamento ' + num + ' como Enviado?')) return;
+  call('apiEstado', num, 'Enviado', ATUAL.fatura || '').then(function () { LISTA = []; abrir(num); });
+}
+
+// ---------------- duplicar / encomenda ----------------
+function duplicar() {
+  var o = ATUAL; if (!o) return;
+  ED = { numero: '', data: D.hoje, cliente: o.cliente, nif: o.nif, email: o.email, tel: o.tel, morada: o.morada, cp: o.cp,
+         validade: o.validade, obs: o.obs, desconto: o.desconto === '' ? '' : Math.round(o.desconto * 1000) / 10, estado: '', fatura: '', margemGlobal: '',
+         linhas: o.linhas.map(function (l) { return { produto: l.produto, ref: l.ref, cor: l.cor, qtd: l.qtd, tam: l.tam || '',
+           margemAj: l.margemAj === '' ? '' : Math.round(l.margemAj * 1000) / 10, pers1: l.pers1, precoAj1: l.precoAj1, pers2: l.pers2, precoAj2: l.precoAj2 }; }) };
+  CALC = null; desenharEditor();
+  msg('Cópia de ' + o.num + '. Muda o cliente ou os artigos e carrega em Guardar — fica com um número novo.');
+}
+function criarEncomenda(num, forn) {
+  if (!confirm('Criar a encomenda à ' + forn + ' com os artigos do orçamento ' + num + '?\nFica guardada como rascunho; envias depois na folha.')) return;
+  call('apiCriarEncomenda', num, forn).then(function (r) {
+    msg('Encomenda ' + r.num + ' (' + r.forn + ') guardada com ' + r.linhas + ' linha(s).' +
+      (r.semTam ? '\n' + r.semTam + ' artigo(s) sem tamanhos — completa na aba Encomenda.' : '') + '\nEnvia na folha: INOVASTAMP › Enviar encomenda.');
+  });
+}
+
 // ---------------- editor ----------------
 function novo() {
-  ED = { numero: '', data: D.hoje, cliente: '', nif: '', email: '', tel: '', morada: '', cp: '', validade: 30, obs: '', desconto: '', estado: '', fatura: '', linhas: [] };
+  ED = { numero: '', data: D.hoje, cliente: '', nif: '', email: '', tel: '', morada: '', cp: '', validade: 30, obs: '', desconto: '', estado: '', fatura: '', margemGlobal: '', linhas: [] };
   CALC = null; desenharEditor(); escolherProduto(null);
 }
 function editar(num) {
   call('apiAbrir', num).then(function (o) {
     ED = { numero: o.num, data: o.data, cliente: o.cliente, nif: o.nif, email: o.email, tel: o.tel, morada: o.morada, cp: o.cp,
            validade: o.validade, obs: o.obs, desconto: o.desconto === '' ? '' : Math.round(o.desconto * 1000) / 10, estado: o.estado, fatura: o.fatura,
-           linhas: o.linhas.map(function (l) { return { produto: l.produto, ref: l.ref, cor: l.cor, qtd: l.qtd, margemAj: l.margemAj === '' ? '' : Math.round(l.margemAj * 1000) / 10,
+           linhas: o.linhas.map(function (l) { return { produto: l.produto, ref: l.ref, cor: l.cor, qtd: l.qtd, tam: l.tam || '', margemAj: l.margemAj === '' ? '' : Math.round(l.margemAj * 1000) / 10,
              pers1: l.pers1, precoAj1: l.precoAj1, pers2: l.pers2, precoAj2: l.precoAj2 }; }) };
+    ED.margemGlobal = ED.linhas.length && ED.linhas.every(function (l) { return l.margemAj !== '' && l.margemAj === ED.linhas[0].margemAj; }) ? ED.linhas[0].margemAj : '';
     CALC = null; desenharEditor();
   });
 }
@@ -247,10 +347,12 @@ function desenharEditor() {
   h += '<h2>Condições</h2><div class="card"><div class="g3"><div><label>Data</label><input id="eData" type="date" value="' + esc(e.data) + '"></div>' +
     '<div><label>Validade (dias)</label><input id="eVal" type="number" value="' + esc(e.validade) + '"></div>' +
     '<div><label>Desconto %</label><input id="eDesc" type="number" step="0.5" value="' + esc(e.desconto) + '"></div></div>' +
+    '<label>Margem para este cliente % <span class="mut">(aplica a todos os artigos · vazio = tabela)</span></label><input id="eMarg" type="number" step="1" value="' + esc(e.margemGlobal) +
+      '" placeholder="tabela (65% / 60% / 55% / 50%)" onchange="margemTodos(this.value)">' +
     '<label>Obs. para o cliente</label><input id="eObs" maxlength="80" value="' + esc(e.obs) + '" placeholder="ex.: Prazo de entrega: 10 dias úteis">' +
     '<div class="g2"><div><label>Estado</label><select id="eEst">' + opts(D.estados, e.estado, '(Rascunho)') + '</select></div>' +
     '<div><label>Nº Fatura</label><input id="eFat" value="' + esc(e.fatura) + '"></div></div></div>';
-  h += '<div class="card" id="eTot"></div>';
+  h += '<div class="card" id="eTot"></div><div id="eLucro"></div>';
   h += '<div class="acts"><button class="btn sec" onclick="calcular(false)">Calcular</button><button class="btn ok" onclick="calcular(true)">Guardar + PDF</button></div><div id="eDepois"></div>';
   $('main').innerHTML = h; desenharLinhas(); desenharTotais();
 }
@@ -260,16 +362,18 @@ function desenharLinhas() {
     var c = CALC && CALC.linhas[i], cores = coresDe(l.ref);
     if (l.cor && !cores.some(function (o) { return o[0] === l.cor; })) cores.unshift([l.cor, l.cor]);
     return '<div class="card"><div class="row">' + foto(l.ref) + '<button class="prod-btn sp" onclick="escolherProduto(' + i + ')">' + esc(l.produto) + '</button><button class="x" onclick="tirar(' + i + ')">✕</button></div>' +
-      '<div class="g2"><div><label>Cor</label>' + (cores.length ? '<select onchange="ED.linhas[' + i + '].cor=this.value;mudou()">' + opts(cores, l.cor, '—') + '</select>'
+      '<div class="g3"><div><label>Cor</label>' + (cores.length ? '<select onchange="ED.linhas[' + i + '].cor=this.value;mudou()">' + opts(cores, l.cor, '—') + '</select>'
         : '<input value="' + esc(l.cor) + '" onchange="ED.linhas[' + i + '].cor=this.value;mudou()">') + '</div>' +
-      '<div><label>Quantidade</label><input type="number" inputmode="numeric" min="1" value="' + esc(l.qtd) + '" onchange="ED.linhas[' + i + '].qtd=Number(this.value)||\'\';mudou()"></div></div>' +
+      '<div><label>Quantidade</label><input type="number" inputmode="numeric" min="1" value="' + esc(l.qtd) + '" onchange="ED.linhas[' + i + '].qtd=Number(this.value)||\'\';mudou();verTam(' + i + ')"></div>' +
+      '<div><label>Margem %</label><input type="number" step="1" value="' + esc(l.margemAj) + '" placeholder="' + (c && c.margem !== '' ? pct(c.margem) : 'tabela') + '" onchange="ED.linhas[' + i + '].margemAj=this.value===\'\'?\'\':Number(this.value);mudou()"></div></div>' +
+      '<label>Tamanhos <span class="mut">(opcional · ex.: S:2 M:5 L:3)</span></label><input value="' + esc(l.tam || '') + '" placeholder="S:2 M:5 L:3" autocapitalize="characters" onchange="ED.linhas[' + i + '].tam=this.value.trim();verTam(' + i + ')">' +
+      '<div id="tam' + i + '">' + infoTam(l) + '</div>' +
       '<div class="g2"><div><label>Personalização 1</label><select onchange="ED.linhas[' + i + '].pers1=this.value;mudou()">' + opts(p, l.pers1, '—') + '</select></div>' +
       '<div><label>Personalização 2</label><select onchange="ED.linhas[' + i + '].pers2=this.value;mudou()">' + opts(p, l.pers2, '—') + '</select></div></div>' +
-      '<details' + (l.margemAj !== '' || l.precoAj1 !== '' || l.precoAj2 !== '' ? ' open' : '') + '><summary>Ajustes (margem / preço personalização)</summary><div class="g3">' +
-      '<div><label>Margem %</label><input type="number" step="1" value="' + esc(l.margemAj) + '" placeholder="' + (c && c.margem !== '' ? pct(c.margem) : 'tabela') + '" onchange="ED.linhas[' + i + '].margemAj=this.value===\'\'?\'\':Number(this.value);mudou()"></div>' +
+      '<details' + (l.precoAj1 !== '' || l.precoAj2 !== '' ? ' open' : '') + '><summary>Ajustes (preço da personalização)</summary><div class="g2">' +
       '<div><label>Pers. 1 €/pç</label><input type="number" step="0.05" value="' + esc(l.precoAj1) + '" placeholder="' + (c && c.tab1 !== '' ? eur(c.tab1) : 'tabela') + '" onchange="ED.linhas[' + i + '].precoAj1=this.value===\'\'?\'\':Number(this.value);mudou()"></div>' +
       '<div><label>Pers. 2 €/pç</label><input type="number" step="0.05" value="' + esc(l.precoAj2) + '" placeholder="' + (c && c.tab2 !== '' ? eur(c.tab2) : 'tabela') + '" onchange="ED.linhas[' + i + '].precoAj2=this.value===\'\'?\'\':Number(this.value);mudou()"></div>' +
-      '</div><div class="mut">Vazio = tabela. Personalização nunca abaixo de 1 €.</div></details>' +
+      '</div><div class="mut">Vazio = tabela. Personalização nunca abaixo de 1 €. As posições sem preço na tabela (ex.: DTF) precisam do preço aqui.</div></details>' +
       (c ? '<div class="row num" style="margin-top:8px"><span class="sp mut">' + esc(c.escalao) + ' pç · peça ' + eur(c.pecaS) + ' + pers. ' + eur(c.persU) + ' s/IVA</span></div>' +
         '<div class="row num"><span class="sp">' + l.qtd + ' × <b>' + eur(c.unitC) + '</b> c/IVA</span><b>' + eur(c.totC) + '</b></div>' : '') +
       '</div>';
@@ -277,11 +381,38 @@ function desenharLinhas() {
 }
 function desenharTotais() {
   var t = $('eTot');
+  var lz0 = $('eLucro'); if (lz0) lz0.innerHTML = '';
   if (!CALC) { t.innerHTML = '<div class="mut">Carrega em <b>Calcular</b> para ver os preços (são os da folha, com as mesmas regras).</div>'; return; }
   t.innerHTML = '<div class="tot"><span>Subtotal s/ IVA</span><span class="num">' + eur(CALC.subtotal) + '</span></div>' +
     (CALC.desc ? '<div class="tot"><span>Desconto</span><span class="num">' + eur(CALC.desc) + '</span></div>' : '') +
     '<div class="tot"><span>Total s/ IVA</span><span class="num">' + eur(CALC.totS) + '</span></div>' +
-    '<div class="tot big"><span>Total c/ IVA</span><span class="num">' + eur(CALC.totC) + '</span></div>';
+    '<div class="tot big"><span>Total c/ IVA</span><span class="num">' + eur(CALC.totC) + '</span></div>' +
+    '';
+  var lz = $('eLucro'); if (lz) lz.innerHTML = blocoLucro(CALC.totS, ED.linhas, CALC.linhas);
+}
+// tamanhos: lê "S:2 M:5 L:3" (ou "2S 5M") e confere com a quantidade
+function lerTam(t) {
+  var s = String(t || '').toUpperCase().replace(/[;,]/g, ' ').replace(/\s+/g, ' ').trim(), out = [], m;
+  var T = '\\d{1,2}\\/\\d{1,2}|[2-6]XL|XXXL|XXL|XL|XXS|XS|S|M|L|U|\\d{2}';
+  var A = '(' + T + ')\\s?[:=]?\\s?(\\d{1,4})', B = '(\\d{1,4})\\s?(' + T + ')';
+  var semG = function (x) { return x.replace(/\((?!\?)/g, '(?:'); };
+  var tA = new RegExp('^(?:' + semG(A) + '(?:\\s|$))+$'), tB = new RegExp('^(?:' + semG(B) + '(?:\\s|$))+$');
+  var inv = !tA.test(s) && tB.test(s), re = new RegExp((inv ? B : A) + '(?=\\s|$)', 'g');
+  while ((m = re.exec(s)) !== null) out.push(inv ? { tam: m[2], qtd: Number(m[1]) } : { tam: m[1], qtd: Number(m[2]) });
+  return out;
+}
+function infoTam(l) {
+  if (!l.tam) return '';
+  var t = lerTam(l.tam), soma = t.reduce(function (a, x) { return a + x.qtd; }, 0);
+  if (!t.length) return '<div class="alerta">Não percebi os tamanhos. Escreve assim: S:2 M:5 L:3</div>';
+  if (l.qtd && soma !== Number(l.qtd)) return '<div class="alerta">Os tamanhos somam ' + soma + ' pç e a quantidade é ' + l.qtd + '.</div>';
+  return '<div class="ok-t">✓ ' + t.map(function (x) { return x.tam + ': ' + x.qtd; }).join(' · ') + '</div>';
+}
+function verTam(i) { var e = $('tam' + i); if (e) e.innerHTML = infoTam(ED.linhas[i]); }
+function margemTodos(v) {
+  ED.margemGlobal = v === '' ? '' : Number(v);
+  ED.linhas.forEach(function (l) { l.margemAj = ED.margemGlobal; });
+  lerCampos(); CALC = null; desenharLinhas(); desenharTotais();
 }
 function lerCampos() {
   ED.cliente = $('eCli').value.trim(); ED.nif = $('eNif').value.trim(); ED.tel = $('eTel').value.trim(); ED.email = $('eEmail').value.trim();
@@ -306,7 +437,7 @@ function nifEscrito() {
 function payload(forcar) {
   return { numero: ED.numero, data: ED.data, cliente: ED.cliente, nif: ED.nif, email: ED.email, tel: ED.tel, morada: ED.morada, cp: ED.cp,
     validade: ED.validade, obs: ED.obs, desconto: ED.desconto === '' ? '' : Number(ED.desconto) / 100, estado: ED.estado, fatura: ED.fatura, forcar: !!forcar,
-    linhas: ED.linhas.map(function (l) { return { produto: l.produto, cor: l.cor, qtd: l.qtd, margemAj: l.margemAj === '' ? '' : Number(l.margemAj) / 100,
+    linhas: ED.linhas.map(function (l) { return { produto: l.produto, cor: l.cor, qtd: l.qtd, tam: l.tam || '', margemAj: l.margemAj === '' ? '' : Number(l.margemAj) / 100,
       pers1: l.pers1, precoAj1: l.precoAj1, pers2: l.pers2, precoAj2: l.precoAj2 }; }) };
 }
 function calcular(guardar, forcar) {
@@ -324,7 +455,8 @@ function calcular(guardar, forcar) {
       if (r.estado) { ED.estado = r.estado; $('eEst').value = r.estado; }
       msg('Guardado: ' + r.numero + (r.cliMsg ? ' · ' + r.cliMsg : '') + (r.msgs && r.msgs.length ? '\n' + r.msgs.join('\n') : ''));
       $('eDepois').innerHTML = '<div class="acts">' + (r.pdf ? '<button class="btn sec" onclick="abrirPdf(\'' + esc(r.numero) + '\')">Abrir PDF</button>' : '') +
-        '<button class="btn" onclick="enviar(\'' + esc(r.numero) + '\',\'' + esc(ED.email) + '\')">Enviar ao cliente</button></div>';
+        '<button class="btn" onclick="enviar(\'' + esc(r.numero) + '\',\'' + esc(ED.email) + '\')">Enviar por email</button></div>' +
+        '<div class="acts"><button class="btn sec" onclick="abrir(\'' + esc(r.numero) + '\')">Ver orçamento (WhatsApp, encomenda…)</button></div>';
       call('apiInit').then(function (d) { D = d; });
     }
   });
@@ -356,7 +488,7 @@ function produtoEscolhido(k) {
   var cores = coresDe(ref), corStock = (D.cores[base(ref)] || []).filter(function (c) { return c.indexOf(STK) === 0; })[0];
   if (PICK.i === null) {
     lerCampos();
-    ED.linhas.push({ produto: lab, ref: ref, cor: corStock ? limpaCor(corStock) : '', qtd: '', margemAj: '', pers1: '', precoAj1: '', pers2: '', precoAj2: '' });
+    ED.linhas.push({ produto: lab, ref: ref, cor: corStock ? limpaCor(corStock) : '', qtd: '', tam: '', margemAj: (ED.margemGlobal === undefined ? '' : ED.margemGlobal), pers1: '', precoAj1: '', pers2: '', precoAj2: '' });
   } else {
     var l = ED.linhas[PICK.i]; l.produto = lab; l.ref = ref;
     if (l.cor && !cores.some(function (o) { return o[0] === l.cor; })) l.cor = '';
@@ -387,6 +519,133 @@ function desenharConsulta() {
 }
 function consProduto() { PICK = { i: null, cb: function (lab, ref) { CONS.lab = lab; CONS.ref = ref; consultar(); } }; abrirModal(); }
 function consultar() { if (!CONS.ref) { desenharConsulta(); return; } call('apiConsulta', CONS.ref, CONS.qtd).then(function (r) { CONS.r = r; desenharConsulta(); }); }
+
+// ---------------- resumo ----------------
+var RES = null, CBUSCA = '';
+function irResumo() {
+  navOn('n-res'); $('titulo').textContent = 'Resumo';
+  call('apiResumo', GPIN).then(function (r) { RES = r; desenharResumo(); });
+}
+function cardPer(t, p) {
+  return '<div class="card"><div class="mut">' + t + '</div><div class="v num">' + eur(p.valor) + '</div><div class="mut">' + p.n + ' enviados · ' + p.ganhos +
+    ' aceites (' + pct(p.taxa) + ')</div><div class="mut">Aceite: ' + eur(p.valorGanho) + '</div></div>';
+}
+function linhaOrc(o, extra) {
+  return '<div class="lin row" onclick="abrir(\'' + esc(o.num) + '\')"><div class="sp"><div class="b">' + esc(o.cliente || '—') + '</div><div class="mut">' + esc(o.num) +
+    (extra ? ' · ' + extra : '') + '</div></div><div class="b num">' + eur(o.tC) + '</div></div>';
+}
+function diasDesde(iso) { if (!iso) return ''; var d = new Date(iso + 'T00:00:00'); return Math.max(0, Math.round((Date.now() - d.getTime()) / 86400000)) + ' dias'; }
+function desenharResumo() {
+  var r = RES, h = '<div class="kpi">' + cardPer('Este mês', r.mes) + cardPer('Mês anterior', r.mesAnt) + '</div><div style="height:8px"></div>' +
+    '<div class="kpi">' + cardPer('Este ano', r.ano) + '<div class="card"><div class="mut">Em aberto / por faturar</div><div class="v num">' + eur(r.valorAberto + r.valorPorFaturar) +
+    '</div><div class="mut">' + r.abertos.length + ' enviados · ' + r.aceitesPorFaturar.length + ' aceites</div><div class="mut">' + r.rascunhos + ' rascunhos</div></div></div>';
+  if (r.margemAno) {
+    var m = r.margemAno;
+    h += '<div class="card lucro' + (m.pct < MARGEM_ALERTA ? ' mau' : '') + '" style="margin-top:10px"><div class="mut">🔒 Modo gestor · aceites do ano</div>' +
+      '<div class="tot"><span>Vendido s/ IVA</span><span class="num">' + eur(m.valor) + '</span></div><div class="tot"><span>Custo das peças</span><span class="num">' + eur(m.custo) + '</span></div>' +
+      '<div class="tot big"><span>Margem bruta</span><span class="num">' + eur(m.lucro) + ' · ' + pct(m.pct) + '</span></div></div>';
+  }
+  if (r.abertos.length) h += '<h2>Enviados, à espera de resposta</h2><div class="card">' + r.abertos.map(function (o) { return linhaOrc(o, o.envio ? 'enviado há ' + diasDesde(o.envio) : dt(o.data)); }).join('') + '</div>';
+  if (r.aceitesPorFaturar.length) h += '<h2>Aceites por faturar</h2><div class="card">' + r.aceitesPorFaturar.map(function (o) { return linhaOrc(o, o.estado); }).join('') + '</div>';
+  if (r.margemReal && r.margemReal.length) {
+    h += '<h2>Margem real (faturados)</h2><div class="card">' + r.margemReal.map(function (x) {
+      var p = x.fatS ? x.margem / x.fatS : 0;
+      return '<div class="lin" onclick="abrir(\'' + esc(x.num) + '\')"><div class="row"><div class="sp"><div class="b">' + esc(x.cliente) + '</div><div class="mut">' + esc(x.num) + ' · Fat. ' + esc(x.fatura) +
+        (x.deFatura ? '' : ' (valor do orçamento)') + '</div></div><div style="text-align:right"><div class="b num">' + eur(x.margem) + '</div><div class="mut ' + (p < MARGEM_ALERTA ? 'alerta' : '') + '">' + pct(p) + '</div></div></div>' +
+        '<div class="mut num">Faturado ' + eur(x.fatS) + ' s/IVA · custo peças ' + eur(x.custo) + '</div></div>';
+    }).join('') + '<div class="mut">Sem o custo da personalização.</div></div>';
+  }
+  if (r.topClientes.length) h += '<h2>Melhores clientes (ano)</h2><div class="card">' + r.topClientes.map(function (c) {
+    return '<div class="lin row" onclick=\'fichaCliente(' + JSON.stringify(c.cliente).replace(/'/g, '&#39;') + ',' + JSON.stringify(c.nif).replace(/'/g, '&#39;') + ')\'><div class="sp b">' + esc(c.cliente) +
+      '</div><div class="mut">' + c.n + ' orç.</div><div class="b num" style="margin-left:8px">' + eur(c.valor) + '</div></div>';
+  }).join('') + '<div class="mut">Valores s/ IVA, orçamentos aceites.</div></div>';
+  if (r.topArtigos.length) h += '<h2>Artigos mais vendidos (ano)</h2><div class="card">' + r.topArtigos.map(function (a) {
+    return '<div class="lin row">' + foto(a.ref) + '<div class="sp"><div class="b">' + esc(nomeCurto(a.produto)) + '</div><div class="mut">' + esc(a.ref) + '</div></div><div class="b num">' + a.qtd + ' pç</div></div>';
+  }).join('') + '</div>';
+  h += '<h2>Clientes</h2><input placeholder="Procurar cliente ou NIF…" value="' + esc(CBUSCA) + '" oninput="CBUSCA=this.value;itensClientes()"><div style="height:6px"></div><div id="cItens"></div>';
+  h += '<h2>Catálogo para cliente</h2><div class="card"><div class="mut">PDF com fotos e preços por escalão dos artigos que escolheres.</div><div class="acts"><button class="btn sec" onclick="irCatalogo()">Criar catálogo</button></div></div>';
+  h += '<h2>Modo gestor</h2><div class="card">' + (gestor() ? '<div class="ok-t">🔒 Ativo neste telemóvel: vês o lucro e a margem.</div><div class="acts"><button class="btn sec" onclick="sairGestor()">Desligar neste telemóvel</button></div>'
+    : '<div class="mut">Mostra o lucro, a margem e a margem real. Código definido na folha (INOVASTAMP › Extras › Definir código de gestor).</div>' +
+      '<input id="gpin" type="password" placeholder="Código de gestor" style="margin-top:8px"><div class="acts"><button class="btn" onclick="entrarGestor()">Ativar</button></div>') + '</div>';
+  $('main').innerHTML = h; itensClientes();
+}
+function itensClientes() {
+  var q = norm(CBUSCA), l = D.clientes.filter(function (c) { return q && norm(c[0] + ' ' + c[1]).indexOf(q) >= 0; }).slice(0, 20);
+  $('cItens').innerHTML = !q ? '<div class="mut">Escreve para procurar.</div>' : l.length ? '<div class="card">' + l.map(function (c, i) {
+    return '<div class="lin row" onclick="fichaClienteK(' + D.clientes.indexOf(c) + ')"><div class="sp b">' + esc(c[0]) + '</div><div class="mut">' + esc(c[1]) + '</div></div>';
+  }).join('') + '</div>' : '<div class="mut">Nenhum cliente.</div>';
+}
+function fichaClienteK(k) { var c = D.clientes[k]; fichaCliente(c[0], c[1]); }
+function entrarGestor() {
+  var g = $('gpin').value.trim(); if (!g) return;
+  call('apiGestor', g).then(function () { GPIN = g; try { localStorage.setItem('inovastamp_gestor', g); } catch (e) {} msg('Modo gestor ativo.'); irResumo(); });
+}
+function sairGestor() { GPIN = ''; try { localStorage.removeItem('inovastamp_gestor'); } catch (e) {} irResumo(); }
+
+// ---------------- ficha do cliente ----------------
+var FICHA = null;
+function fichaCliente(nome, nif) {
+  call('apiCliente', nome || '', nif || '').then(function (c) {
+    FICHA = c; navOn('n-res'); $('titulo').textContent = 'Cliente';
+    var h = '<div class="card"><div class="b" style="font-size:17px">' + esc(c.cliente) + '</div><div class="mut">' + (c.nif ? 'NIF ' + esc(c.nif) : '') +
+      (c.email ? ' · ' + esc(c.email) : '') + (c.tel ? ' · ' + esc(c.tel) : '') + '</div>' + (c.morada ? '<div class="mut">' + esc(c.morada + (c.cp ? ', ' + c.cp : '')) + '</div>' : '') +
+      '<div class="acts"><button class="btn" onclick="novoParaCliente()">Novo orçamento</button>' + (c.tel ? '<a class="btn wa" style="text-align:center;text-decoration:none" target="_blank" href="https://wa.me/' + telWa(c.tel) + '">WhatsApp</a>' : '') + '</div></div>';
+    h += '<div class="kpi"><div class="card"><div class="mut">Orçamentos</div><div class="v">' + c.total.n + '</div><div class="mut">' + c.total.ganhos + ' aceites</div></div>' +
+      '<div class="card"><div class="mut">Aceite (s/ IVA)</div><div class="v num">' + eur(c.total.valorGanho) + '</div><div class="mut">Faturado ' + eur(c.total.faturado) + '</div></div></div>';
+    if (c.ultimo) h += '<div class="mut" style="margin:8px 2px">Último orçamento: ' + dt(c.ultimo) + ' (há ' + diasDesde(c.ultimo) + ')</div>';
+    if (c.artigos.length) h += '<h2>Artigos habituais</h2><div class="card">' + c.artigos.map(function (a) {
+      return '<div class="lin row">' + foto(a.ref) + '<div class="sp"><div class="b">' + esc(nomeCurto(a.produto)) + '</div><div class="mut">' + esc(a.ref) + ' · ' + esc(a.cor || 'sem cor') +
+        ' · ' + a.vezes + 'x · último ' + eur(a.unitC) + ' c/IVA</div></div><div class="b num">' + a.qtd + ' pç</div></div>';
+    }).join('') + '</div>';
+    h += '<h2>Orçamentos</h2><div class="card">' + (c.orcs.length ? c.orcs.map(function (o) {
+      return '<div class="lin row" onclick="abrir(\'' + esc(o.num) + '\')"><div class="sp"><div class="b">' + esc(o.num) + '</div><div class="mut">' + dt(o.data) + (o.fatura ? ' · Fat. ' + esc(o.fatura) : '') +
+        '</div></div><div style="text-align:right"><div class="b num">' + eur(o.tC) + '</div><span class="tag t-' + esc(o.estado.replace(/\s/g, '')) + '">' + esc(o.estado || '—') + '</span></div></div>';
+    }).join('') : '<div class="vazio">Sem orçamentos.</div>') + '</div>';
+    $('main').innerHTML = h;
+  });
+}
+function novoParaCliente() {
+  var c = FICHA; novo();
+  ED.cliente = c.cliente; ED.nif = c.nif; ED.email = c.email; ED.tel = c.tel; ED.morada = c.morada; ED.cp = c.cp;
+  fecharModal(); desenharEditor();
+}
+
+// ---------------- catálogo para cliente ----------------
+var CAT = { itens: [], titulo: '', cliente: '' };
+function irCatalogo() { navOn('n-res'); $('titulo').textContent = 'Catálogo'; desenharCatalogo(); }
+function desenharCatalogo() {
+  var h = '<div class="card"><label>Título</label><input id="catT" value="' + esc(CAT.titulo) + '" placeholder="ex.: Fardamento de cozinha" onchange="CAT.titulo=this.value">' +
+    '<label>Cliente (opcional)</label><input id="catC" value="' + esc(CAT.cliente) + '" onchange="CAT.cliente=this.value"></div>';
+  h += '<h2>Artigos (' + CAT.itens.length + ')</h2><div class="card">' + (CAT.itens.length ? CAT.itens.map(function (a, i) {
+    return '<div class="sel">' + foto(a.ref) + '<div class="sp">' + esc(a.lab) + '</div><button class="x" onclick="CAT.itens.splice(' + i + ',1);desenharCatalogo()">✕</button></div>';
+  }).join('') : '<div class="mut">Ainda sem artigos.</div>') + '<div class="acts"><button class="btn sec" onclick="catAdicionar()">＋ Adicionar artigo</button></div></div>';
+  h += '<div class="acts"><button class="btn ok" onclick="catCriar()"' + (CAT.itens.length ? '' : ' disabled') + '>Criar PDF</button></div><div id="catZona"></div>';
+  $('main').innerHTML = h;
+}
+function catAdicionar() {
+  PICK = { i: null, cb: function (lab, ref) { if (!CAT.itens.some(function (x) { return x.ref === ref; })) CAT.itens.push({ lab: lab, ref: ref }); desenharCatalogo(); } };
+  abrirModal();
+}
+var CATPDF = null;
+function catCriar() {
+  CAT.titulo = $('catT').value.trim(); CAT.cliente = $('catC').value.trim();
+  call('apiCatalogo', CAT.itens.map(function (x) { return x.ref; }), CAT.titulo, CAT.cliente).then(function (r) {
+    var bin = atob(r.b64), a = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
+    CATPDF = { nome: r.nome, a: a };
+    var pode = false; try { pode = navigator.canShare && navigator.canShare({ files: [new File([a], r.nome, { type: 'application/pdf' })] }); } catch (e) {}
+    $('catZona').innerHTML = '<div class="card"><div class="ok-t">✓ ' + esc(r.nome) + ' (guardado no Drive)</div><div class="acts"><button class="btn sec" onclick="catAbrir()">Abrir PDF</button>' +
+      (pode ? '<button class="btn wa" onclick="catPartilhar()">Partilhar</button>' : '') + '</div></div>';
+  });
+}
+function catAbrir() {
+  var url = URL.createObjectURL(new Blob([CATPDF.a], { type: 'application/pdf' }));
+  var l = document.createElement('a'); l.href = url; l.download = CATPDF.nome; l.target = '_blank'; document.body.appendChild(l); l.click(); l.remove();
+  setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+}
+function catPartilhar() {
+  navigator.share({ files: [new File([CATPDF.a], CATPDF.nome, { type: 'application/pdf' })], title: CATPDF.nome }).catch(function () {});
+}
 
 // ---------------- stock ----------------
 var SBUSCA = '';
