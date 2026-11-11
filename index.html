@@ -79,6 +79,10 @@
   .kpi { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
   .kpi .card { margin:0; }
   .kpi .v { font-size:18px; font-weight:700; color:var(--azul); }
+  .cv { width:100%; touch-action:none; border-radius:12px; background:#fff; display:block; }
+  .g4 { display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:0 6px; }
+  table.sim { width:100%; border-collapse:collapse; font-size:13px; } table.sim td, table.sim th { padding:4px 3px; text-align:right; border-bottom:1px solid var(--linha); }
+  table.sim th { color:var(--mut); font-weight:600; } table.sim td:first-child, table.sim th:first-child { text-align:left; }
   .sel { display:flex; gap:8px; align-items:center; border-top:1px solid var(--linha); padding:7px 0; }
 </style>
 </head>
@@ -90,7 +94,7 @@
   <button id="n-novo" onclick="novo()"><b>＋</b>Novo</button>
   <button id="n-cons" onclick="irConsulta()"><b>€</b>Consulta</button>
   <button id="n-res" onclick="irResumo()"><b>▤</b>Resumo</button>
-  <button id="n-stock" onclick="irStock()"><b>▦</b>Stock</button>
+  <button id="n-maq" onclick="irMaquete()"><b>✎</b>Maquete</button>
 </nav>
 <div id="modal"><div class="box"><div class="hd"><input id="mq" placeholder="Procurar produto ou referência…" oninput="filtrarModal()"><button class="btn sec" onclick="fecharModal()">Fechar</button></div><div class="bd" id="mbd"></div></div></div>
 <div id="load"><div class="spin"></div></div>
@@ -149,7 +153,7 @@ function abrirPdf(num) {
     setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
   });
 }
-function navOn(id) { ['n-lista','n-novo','n-cons','n-res','n-stock'].forEach(function (n) { $(n).className = n === id ? 'on' : ''; }); window.scrollTo(0, 0); }
+function navOn(id) { ['n-lista','n-novo','n-cons','n-res','n-maq'].forEach(function (n) { $(n).className = n === id ? 'on' : ''; }); window.scrollTo(0, 0); }
 
 // ---------------- arranque ----------------
 function iniciar() { if (!PIN) { entrar(); return; } call('apiInit').then(function (d) { D = d; irLista(true); }); }
@@ -225,6 +229,10 @@ function desenharDetalhe(o) {
     (o.pdf ? '<div class="acts"><button class="btn wa" onclick="whatsapp(' + n + ')">WhatsApp</button></div><div id="waZona"></div>' : '') +
     '<div class="acts"><button class="btn sec" onclick="editar(' + n + ')">Editar</button><button class="btn sec" onclick="duplicar()">Duplicar</button>' +
     '<button class="btn sec" onclick="fichaCliente(ATUAL.cliente, ATUAL.nif)">Ficha do cliente</button></div>';
+  if (['Aceite', 'Em produção'].indexOf(o.estado) >= 0) h += '<h2>O cliente mudou de ideias?</h2><div class="card"><div class="mut">' +
+    'Para alterar artigos: <b>Editar</b>, muda o que for preciso e guarda — o orçamento volta a "Enviado" e reenvias (o link de aceitação continua o mesmo). ' +
+    'Se já criaste a encomenda ao fornecedor, ajusta-a na aba Encomenda.</div><div class="acts">' +
+    '<button class="btn sec" onclick="anularAceite(' + n + ',\'Enviado\')">Anular aceitação</button><button class="btn sec" onclick="anularAceite(' + n + ',\'Recusado\')">Cliente desistiu</button></div></div>';
   var forn = {};
   o.linhas.forEach(function (l) { forn[String(l.produto).indexOf('· Roly') >= 0 ? 'Roly' : 'Velilla'] = true; });
   h += '<h2>Encomenda ao fornecedor</h2><div class="card"><div class="mut">Passa os artigos deste orçamento para a aba Encomenda (separados por tamanho, se os tiveres indicado) e guarda-a como rascunho. ' +
@@ -292,6 +300,11 @@ function marcarEnviado(num) {
   if (!ATUAL || ATUAL.num !== num || (ATUAL.estado && ATUAL.estado !== 'Rascunho')) return;
   if (!confirm('Marcar o orçamento ' + num + ' como Enviado?')) return;
   call('apiEstado', num, 'Enviado', ATUAL.fatura || '').then(function () { LISTA = []; abrir(num); });
+}
+
+function anularAceite(num, novo) {
+  if (!confirm(novo === 'Recusado' ? 'Marcar o orçamento ' + num + ' como Recusado (o cliente desistiu)?' : 'Anular a aceitação do orçamento ' + num + '? Volta a "Enviado".')) return;
+  call('apiEstado', num, novo, '').then(function () { msg(num + ': ' + novo); LISTA = []; abrir(num); });
 }
 
 // ---------------- duplicar / encomenda ----------------
@@ -373,7 +386,8 @@ function desenharLinhas() {
       '<details' + (l.precoAj1 !== '' || l.precoAj2 !== '' ? ' open' : '') + '><summary>Ajustes (preço da personalização)</summary><div class="g2">' +
       '<div><label>Pers. 1 €/pç</label><input type="number" step="0.05" value="' + esc(l.precoAj1) + '" placeholder="' + (c && c.tab1 !== '' ? eur(c.tab1) : 'tabela') + '" onchange="ED.linhas[' + i + '].precoAj1=this.value===\'\'?\'\':Number(this.value);mudou()"></div>' +
       '<div><label>Pers. 2 €/pç</label><input type="number" step="0.05" value="' + esc(l.precoAj2) + '" placeholder="' + (c && c.tab2 !== '' ? eur(c.tab2) : 'tabela') + '" onchange="ED.linhas[' + i + '].precoAj2=this.value===\'\'?\'\':Number(this.value);mudou()"></div>' +
-      '</div><div class="mut">Vazio = tabela. Personalização nunca abaixo de 1 €. As posições sem preço na tabela (ex.: DTF) precisam do preço aqui.</div></details>' +
+      '</div><div class="mut">Vazio = tabela. Personalização nunca abaixo de 1 €. As posições sem preço na tabela (ex.: DTF) precisam do preço aqui.</div>' +
+      '<button class="btn lite" onclick="dtfDaLinha(' + i + ')">✎ Simular DTF / maquete para este artigo</button></details>' +
       (c ? '<div class="row num" style="margin-top:8px"><span class="sp mut">' + esc(c.escalao) + ' pç · peça ' + eur(c.pecaS) + ' + pers. ' + eur(c.persU) + ' s/IVA</span></div>' +
         '<div class="row num"><span class="sp">' + l.qtd + ' × <b>' + eur(c.unitC) + '</b> c/IVA</span><b>' + eur(c.totC) + '</b></div>' : '') +
       '</div>';
@@ -445,6 +459,10 @@ function calcular(guardar, forcar) {
   if (!ED.linhas.length) { msg('Adiciona pelo menos um artigo.', true); return; }
   if (ED.linhas.some(function (l) { return !l.qtd; })) { msg('Falta a quantidade num artigo.', true); return; }
   if (guardar && !ED.cliente) { msg('Falta o nome do cliente.', true); return; }
+  if (guardar && !forcar && ['Aceite', 'Em produção'].indexOf(ED.estado) >= 0 && ED.numero) {
+    var v = confirm('Este orçamento já estava ' + ED.estado + '.\nOK = volta a "Enviado" (o cliente aceita de novo a versão alterada).\nCancelar = mantém "' + ED.estado + '".');
+    if (v) { ED.estado = 'Enviado'; var se = $('eEst'); if (se) se.value = 'Enviado'; }
+  }
   call('apiCalcular', payload(forcar), guardar).then(function (r) {
     if (!r.ok && r.ocupado) { if (confirm(r.msg + '\n\nContinuar?')) calcular(guardar, true); return; }
     if (!r.ok) { msg(r.msg, true); return; }
@@ -564,6 +582,7 @@ function desenharResumo() {
   }).join('') + '</div>';
   h += '<h2>Clientes</h2><input placeholder="Procurar cliente ou NIF…" value="' + esc(CBUSCA) + '" oninput="CBUSCA=this.value;itensClientes()"><div style="height:6px"></div><div id="cItens"></div>';
   h += '<h2>Catálogo para cliente</h2><div class="card"><div class="mut">PDF com fotos e preços por escalão dos artigos que escolheres.</div><div class="acts"><button class="btn sec" onclick="irCatalogo()">Criar catálogo</button></div></div>';
+  h += '<div class="acts"><button class="btn sec" onclick="irStock()">Ver stock</button></div>';
   h += '<h2>Modo gestor</h2><div class="card">' + (gestor() ? '<div class="ok-t">🔒 Ativo neste telemóvel: vês o lucro e a margem.</div><div class="acts"><button class="btn sec" onclick="sairGestor()">Desligar neste telemóvel</button></div>'
     : '<div class="mut">Mostra o lucro, a margem e a margem real. Código definido na folha (INOVASTAMP › Extras › Definir código de gestor).</div>' +
       '<input id="gpin" type="password" placeholder="Código de gestor" style="margin-top:8px"><div class="acts"><button class="btn" onclick="entrarGestor()">Ativar</button></div>') + '</div>';
@@ -647,10 +666,179 @@ function catPartilhar() {
   navigator.share({ files: [new File([CATPDF.a], CATPDF.nome, { type: 'application/pdf' })], title: CATPDF.nome }).catch(function () {});
 }
 
+// ---------------- maquete (desenho do cliente na peça) + simulador DTF ----------------
+var MQ = { ref: '', lab: '', peca: null, des: null, desOrig: null, x: 0.5, y: 0.36, wcm: 25, rot: 0, pecaCm: 70, semFundo: false, voltar: null };
+var DTF = { w: 25, h: 18, qtd: 10, preco: 14, rolo: 55, gap: 1, aplic: 0, margem: 100, inteiros: false };
+try { var _d = JSON.parse(localStorage.getItem('inovastamp_dtf') || 'null'); if (_d) ['preco', 'rolo', 'gap', 'aplic', 'margem', 'inteiros'].forEach(function (k) { if (_d[k] !== undefined) DTF[k] = _d[k]; }); } catch (e) {}
+function guardarDtf() { try { localStorage.setItem('inovastamp_dtf', JSON.stringify({ preco: DTF.preco, rolo: DTF.rolo, gap: DTF.gap, aplic: DTF.aplic, margem: DTF.margem, inteiros: DTF.inteiros })); } catch (e) {} }
+
+function irMaquete() {
+  navOn('n-maq'); $('titulo').textContent = 'Maquete e DTF';
+  var h = '<div class="card"><label>Peça</label><div class="row"><button class="prod-btn sp" onclick="mqProduto()">' + esc(MQ.lab || 'Escolher produto…') + '</button></div>' +
+    '<div class="acts"><label class="btn sec" style="text-align:center;margin:0">Foto própria<input type="file" accept="image/*" style="display:none" onchange="mqFotoPropria(this)"></label>' +
+    '<label class="btn" style="text-align:center;margin:0;color:#fff">Desenho do cliente<input type="file" accept="image/*" style="display:none" onchange="mqDesenho(this)"></label></div>' +
+    '<label style="display:flex;gap:8px;align-items:center;margin-top:8px"><input type="checkbox" style="width:auto" ' + (MQ.semFundo ? 'checked ' : '') + 'onchange="MQ.semFundo=this.checked;mqProcessar()"> Tirar o fundo branco do desenho</label></div>';
+  h += '<canvas id="mqCv" class="cv"></canvas><div class="mut" style="margin:4px 2px 8px">Arrasta o desenho com o dedo; com dois dedos aumenta/diminui.</div>';
+  h += '<div class="card"><div class="g3"><div><label>Largura (cm)</label><input id="mqW" type="number" step="0.5" value="' + MQ.wcm + '" onchange="MQ.wcm=Number(this.value)||1;mqDesenhar();dtfDoDesenho()"></div>' +
+    '<div><label>Rodar (°)</label><input type="number" step="5" value="' + MQ.rot + '" onchange="MQ.rot=Number(this.value)||0;mqDesenhar()"></div>' +
+    '<div><label>Escala da foto (cm)</label><input type="number" step="1" value="' + MQ.pecaCm + '" onchange="MQ.pecaCm=Number(this.value)||70;mqDesenhar()"></div></div>' +
+    '<div class="mut">"Escala da foto" = quantos cm de largura cabem na foto (ajusta até o desenho ficar com o tamanho real na peça).</div>' +
+    '<div class="acts"><button class="btn sec" onclick="mqPos(0.5,0.36)">Frente</button><button class="btn sec" onclick="mqPos(0.62,0.3)">Peito esq.</button><button class="btn sec" onclick="mqPos(0.5,0.42)">Centro</button></div>' +
+    '<div class="acts"><button class="btn wa" onclick="mqPartilhar()">Partilhar imagem</button><button class="btn sec" onclick="mqGuardar()">Guardar imagem</button></div></div>';
+  h += '<h2>Custo do DTF</h2><div id="dtfZona"></div>';
+  $('main').innerHTML = h;
+  mqDesenhar(); desenharDtf();
+  if (MQ.ref && !MQ.peca) mqCarregarFoto();
+}
+function mqPos(x, y) { MQ.x = x; MQ.y = y; mqDesenhar(); }
+function mqProduto() { PICK = { i: null, cb: function (lab, ref) { MQ.lab = lab; MQ.ref = ref; MQ.peca = null; irMaquete(); } }; abrirModal(); }
+function mqCarregarFoto() {
+  call('apiFoto', MQ.ref).then(function (r) {
+    var im = new Image(); im.onload = function () { MQ.peca = im; mqDesenhar(); }; im.src = 'data:' + r.tipo + ';base64,' + r.b64;
+  });
+}
+function mqLerImagem(input, cb) {
+  var f = input.files && input.files[0]; if (!f) return;
+  var rd = new FileReader(); rd.onload = function () { var im = new Image(); im.onload = function () { cb(im); }; im.src = rd.result; }; rd.readAsDataURL(f);
+}
+function mqFotoPropria(inp) { mqLerImagem(inp, function (im) { MQ.peca = im; if (!MQ.lab) MQ.lab = 'Foto própria'; mqDesenhar(); }); }
+function mqDesenho(inp) { mqLerImagem(inp, function (im) { MQ.desOrig = im; mqProcessar(); }); }
+function mqProcessar() {
+  var o = MQ.desOrig; if (!o) return;
+  if (!MQ.semFundo) { MQ.des = o; mqDesenhar(); dtfDoDesenho(); return; }
+  var c = document.createElement('canvas'), k = Math.min(1, 1600 / Math.max(o.width, o.height));
+  c.width = Math.round(o.width * k); c.height = Math.round(o.height * k);
+  var x = c.getContext('2d'); x.drawImage(o, 0, 0, c.width, c.height);
+  var d = x.getImageData(0, 0, c.width, c.height), p = d.data;
+  for (var i = 0; i < p.length; i += 4) { var m = Math.min(p[i], p[i + 1], p[i + 2]); if (m > 235) p[i + 3] = 0; else if (m > 215) p[i + 3] = Math.round(p[i + 3] * (235 - m) / 20); }
+  x.putImageData(d, 0, 0);
+  var im = new Image(); im.onload = function () { MQ.des = im; mqDesenhar(); dtfDoDesenho(); }; im.src = c.toDataURL('image/png');
+}
+function mqTamanhoCv() {
+  var cv = $('mqCv'); if (!cv) return null;
+  var W = Math.min(cv.parentNode.clientWidth || 360, 640), H = Math.round(W * 1.15), r = window.devicePixelRatio || 1;
+  if (cv.width !== Math.round(W * r)) { cv.width = Math.round(W * r); cv.height = Math.round(H * r); cv.style.height = H + 'px'; }
+  return { cv: cv, W: W, H: H, r: r };
+}
+function mqDesenhar(exportar) {
+  var t = mqTamanhoCv(); if (!t) return;
+  var x = t.cv.getContext('2d'), W = t.W, H = t.H;
+  x.setTransform(t.r, 0, 0, t.r, 0, 0); x.fillStyle = '#fff'; x.fillRect(0, 0, W, H);
+  if (MQ.peca) { var k = Math.min(W / MQ.peca.width, H / MQ.peca.height); x.drawImage(MQ.peca, (W - MQ.peca.width * k) / 2, (H - MQ.peca.height * k) / 2, MQ.peca.width * k, MQ.peca.height * k); }
+  else { x.fillStyle = '#9aa3b5'; x.font = '15px sans-serif'; x.textAlign = 'center'; x.fillText('Escolhe a peça (ou carrega uma foto)', W / 2, H / 2); }
+  if (MQ.des) {
+    var ppc = W / MQ.pecaCm, dw = MQ.wcm * ppc, dh = dw * MQ.des.height / MQ.des.width;
+    x.save(); x.translate(MQ.x * W, MQ.y * H); x.rotate(MQ.rot * Math.PI / 180); x.drawImage(MQ.des, -dw / 2, -dh / 2, dw, dh); x.restore();
+  }
+  if (exportar) {
+    x.fillStyle = 'rgba(31,56,100,.85)'; x.fillRect(0, H - 26, W, 26); x.fillStyle = '#fff'; x.font = '12px sans-serif'; x.textAlign = 'left';
+    x.fillText('INOVASTAMP · simulação ' + (MQ.des ? '· desenho ' + fmtCm(MQ.wcm) + ' × ' + fmtCm(dtfAltura()) + ' cm ' : '') + '· cores e proporções aproximadas', 8, H - 9);
+  }
+  mqEventos(t.cv, W, H);
+}
+function fmtCm(v) { return String(Math.round(v * 10) / 10).replace('.', ','); }
+function dtfAltura() { return MQ.des ? MQ.wcm * MQ.des.height / MQ.des.width : DTF.h; }
+function mqEventos(cv, W, H) {
+  if (cv._ok) return; cv._ok = true;
+  var pts = {}, ini = null;
+  cv.addEventListener('pointerdown', function (e) { cv.setPointerCapture(e.pointerId); pts[e.pointerId] = { x: e.offsetX, y: e.offsetY }; ini = null; });
+  cv.addEventListener('pointermove', function (e) {
+    if (!pts[e.pointerId] || !MQ.des) return;
+    var ant = pts[e.pointerId]; pts[e.pointerId] = { x: e.offsetX, y: e.offsetY };
+    var ids = Object.keys(pts), Wc = cv.clientWidth, Hc = cv.clientHeight;
+    if (ids.length === 1) { MQ.x = Math.min(1, Math.max(0, MQ.x + (e.offsetX - ant.x) / Wc)); MQ.y = Math.min(1, Math.max(0, MQ.y + (e.offsetY - ant.y) / Hc)); }
+    else if (ids.length === 2) {
+      var a = pts[ids[0]], b = pts[ids[1]], d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (ini) { MQ.wcm = Math.max(1, Math.min(60, ini.w * d / ini.d)); var i = $('mqW'); if (i) i.value = fmtCm(MQ.wcm).replace(',', '.'); } else ini = { d: d, w: MQ.wcm };
+    }
+    mqDesenhar();
+  });
+  var fim = function (e) { delete pts[e.pointerId]; if (ini) { ini = null; dtfDoDesenho(); } };
+  cv.addEventListener('pointerup', fim); cv.addEventListener('pointercancel', fim);
+}
+function mqBlob(cb) { mqDesenhar(true); $('mqCv').toBlob(function (b) { mqDesenhar(); cb(b); }, 'image/png'); }
+function mqNome() { return 'Maquete ' + (MQ.ref || 'INOVASTAMP') + '.png'; }
+function mqGuardar() {
+  mqBlob(function (b) { var u = URL.createObjectURL(b), l = document.createElement('a'); l.href = u; l.download = mqNome(); document.body.appendChild(l); l.click(); l.remove(); setTimeout(function () { URL.revokeObjectURL(u); }, 60000); });
+}
+function mqPartilhar() {
+  mqBlob(function (b) {
+    var f = new File([b], mqNome(), { type: 'image/png' });
+    if (navigator.canShare && navigator.canShare({ files: [f] })) navigator.share({ files: [f], text: 'Simulação da personalização — INOVASTAMP' }).catch(function () {});
+    else { msg('Este navegador não partilha imagens — usa "Guardar imagem".'); }
+  });
+}
+
+// --- simulador do custo DTF: quantos desenhos cabem no rolo, metros gastos, custo e preço por peça ---
+function dtfDoDesenho() { if (MQ.des) { DTF.w = Math.round(MQ.wcm * 10) / 10; DTF.h = Math.round(dtfAltura() * 10) / 10; desenharDtf(); } }
+function dtfCalc(w, h, qtd) {
+  var util = DTF.rolo, g = DTF.gap, op = [];
+  [[w, h], [h, w]].forEach(function (d) {
+    var n = Math.floor((util + g) / (d[0] + g)); if (n < 1) return;
+    var filas = Math.ceil(qtd / n); op.push({ porFila: n, filas: filas, cm: filas * (d[1] + g), rodado: d[0] !== w });
+  });
+  if (!op.length) return null;
+  op.sort(function (a, b) { return a.cm - b.cm; });
+  var o = op[0], m = o.cm / 100, mCob = DTF.inteiros ? Math.ceil(m) : m;
+  var custoFilme = mCob * DTF.preco, custoPc = custoFilme / qtd + Number(DTF.aplic || 0);
+  var pv = Math.max(1, custoPc * (1 + DTF.margem / 100));
+  return { o: o, metros: m, mCob: mCob, custoFilme: custoFilme, custoPc: custoPc, pv: Math.round(pv * 100) / 100 };
+}
+function dtfCampo(k, v, num) { DTF[k] = num ? (Number(v) || 0) : v; if (['preco', 'rolo', 'gap', 'aplic', 'margem', 'inteiros'].indexOf(k) >= 0) guardarDtf(); desenharDtf(); }
+function desenharDtf() {
+  var z = $('dtfZona'); if (!z) return;
+  var r = dtfCalc(DTF.w, DTF.h, DTF.qtd || 1), iva = 0.23;
+  var h = '<div class="card"><div class="g3"><div><label>Desenho L (cm)</label><input type="number" step="0.5" value="' + DTF.w + '" onchange="dtfCampo(\'w\',this.value,1)"></div>' +
+    '<div><label>A (cm)</label><input type="number" step="0.5" value="' + DTF.h + '" onchange="dtfCampo(\'h\',this.value,1)"></div>' +
+    '<div><label>Quantidade</label><input type="number" min="1" value="' + DTF.qtd + '" onchange="dtfCampo(\'qtd\',this.value,1)"></div></div>' +
+    '<details><summary>Parâmetros (ficam guardados neste telemóvel)</summary><div class="g3">' +
+    '<div><label>Preço €/metro</label><input type="number" step="0.5" value="' + DTF.preco + '" onchange="dtfCampo(\'preco\',this.value,1)"></div>' +
+    '<div><label>Largura rolo (cm)</label><input type="number" step="1" value="' + DTF.rolo + '" onchange="dtfCampo(\'rolo\',this.value,1)"></div>' +
+    '<div><label>Espaço (cm)</label><input type="number" step="0.5" value="' + DTF.gap + '" onchange="dtfCampo(\'gap\',this.value,1)"></div></div><div class="g2">' +
+    '<div><label>Aplicação €/pç</label><input type="number" step="0.05" value="' + DTF.aplic + '" onchange="dtfCampo(\'aplic\',this.value,1)"></div>' +
+    '<div><label>Margem %</label><input type="number" step="5" value="' + DTF.margem + '" onchange="dtfCampo(\'margem\',this.value,1)"></div></div>' +
+    '<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" style="width:auto" ' + (DTF.inteiros ? 'checked ' : '') + 'onchange="dtfCampo(\'inteiros\',this.checked)"> Cobrar metros inteiros (sem juntar com outros trabalhos)</label>' +
+    '<div class="mut">Pubeivil: 12,50 €/m (rolo 0,55 m) · DTF UV 20 €/m. Aplicação = prensa / mão de obra por peça (opcional). Preço de venda nunca abaixo de 1 €.</div></details>';
+  if (!r) h += '<div class="alerta" style="margin-top:8px">O desenho não cabe na largura do rolo.</div></div>';
+  else {
+    h += '<div style="margin-top:8px"><div class="tot"><span>Arrumação</span><span class="num">' + r.o.porFila + ' por fila × ' + r.o.filas + ' filas' + (r.o.rodado ? ' (rodado)' : '') + '</span></div>' +
+      '<div class="tot"><span>Filme gasto</span><span class="num">' + fmtCm(r.metros * 100) + ' cm' + (DTF.inteiros ? ' → ' + r.mCob + ' m' : '') + '</span></div>' +
+      '<div class="tot"><span>Custo do filme</span><span class="num">' + eur(r.custoFilme) + '</span></div>' +
+      '<div class="tot"><span>Custo por peça</span><span class="num">' + eur(r.custoPc) + '</span></div>' +
+      '<div class="tot big"><span>Preço DTF por peça</span><span class="num">' + eur(r.pv) + ' <span class="mut">c/IVA ' + eur(Math.round(r.pv * (1 + iva) * 100) / 100) + '</span></span></div></div>' +
+      (MQ.voltar ? '<div class="acts"><button class="btn ok" onclick="dtfUsar(' + r.pv + ')">Usar ' + eur(r.pv) + '/pç no artigo ' + (MQ.voltar.i + 1) + '</button></div>' : '') + '</div>';
+    h += '<h2>Por quantidade (este desenho)</h2><div class="card"><table class="sim"><tr><th>Qtd</th><th>Filme</th><th>Custo/pç</th><th>Preço/pç</th><th>c/IVA</th></tr>' +
+      [1, 5, 10, 25, 50, 100, 250].map(function (q) {
+        var x = dtfCalc(DTF.w, DTF.h, q); if (!x) return '';
+        return '<tr' + (q === Number(DTF.qtd) ? ' style="font-weight:700"' : '') + '><td>' + q + '</td><td>' + fmtCm(x.metros * 100) + ' cm</td><td>' + eur(x.custoPc) + '</td><td>' + eur(x.pv) + '</td><td>' + eur(Math.round(x.pv * 1.23 * 100) / 100) + '</td></tr>';
+      }).join('') + '</table></div>';
+  }
+  z.innerHTML = h;
+}
+// a partir de um artigo do orçamento
+function dtfDaLinha(i) {
+  lerCampos();
+  var l = ED.linhas[i];
+  var campo = /DTF/i.test(l.pers1 || '') || !l.pers1 ? 1 : 2;
+  MQ.voltar = { i: i, campo: campo };
+  if (l.ref !== MQ.ref) { MQ.ref = l.ref; MQ.lab = l.produto; MQ.peca = null; }
+  DTF.qtd = Number(l.qtd) || 1;
+  irMaquete();
+}
+function dtfUsar(pv) {
+  var v = MQ.voltar; if (!v || !ED || !ED.linhas[v.i]) return;
+  var l = ED.linhas[v.i], tam = Math.max(DTF.w, DTF.h);
+  var nome = tam <= 10 ? 'DTF – Peito / pequeno' : tam <= 30 ? 'DTF – A4' : 'DTF – A3';
+  if (!/DTF/i.test(l['pers' + v.campo] || '') && D.pers.indexOf(nome) >= 0) l['pers' + v.campo] = nome;
+  l['precoAj' + v.campo] = Math.round(pv * 100) / 100;
+  MQ.voltar = null; CALC = null; desenharEditor();
+  msg('Preço do DTF (' + eur(pv) + '/pç) posto no artigo ' + (v.i + 1) + '. Carrega em Calcular.');
+}
+
 // ---------------- stock ----------------
 var SBUSCA = '';
 function irStock() {
-  navOn('n-stock'); $('titulo').textContent = 'Stock';
+  navOn('n-res'); $('titulo').textContent = 'Stock';
   if (!STOCK) call('apiStock').then(function (s) { STOCK = s; desenharStock(); }); else desenharStock();
 }
 function desenharStock() {
