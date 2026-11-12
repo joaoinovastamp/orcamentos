@@ -770,8 +770,9 @@ function mqVista(v) { MQ.vista = v; if (v !== 'FC') MQ.lado = v; irMaquete(); }
 function mqPos(x, y, w) { var L = ladoAtual(); L.x = x; L.y = y; if (w && L.des) { L.wcm = w; var i = $('mqW'); if (i) i.value = w; dtfDoDesenho(); } mqDesenhar(); }
 function mqTirar() { var L = ladoAtual(); L.des = null; L.orig = null; irMaquete(); }
 function mqProduto() { PICK = { i: null, cb: function (lab, ref) { MQ.lab = lab; MQ.ref = ref; MQ.peca = null; MQ.modo = 'foto'; irMaquete(); } }; abrirModal(); }
-function mqCarregarFoto() {
-  call('apiFoto', MQ.ref).then(function (r) { var im = new Image(); im.onload = function () { MQ.peca = im; mqDesenhar(); }; im.src = 'data:' + r.tipo + ';base64,' + r.b64; });
+function mqCarregarFoto() {   // primeiro a foto grande da proposta (pasta "INOVASTAMP - Fotos Proposta"); se não houver, a miniatura do catálogo
+  var usa = function (r) { var im = new Image(); im.onload = function () { MQ.peca = im; mqDesenhar(); }; im.src = 'data:' + r.tipo + ';base64,' + r.b64; };
+  call('apiFotoHD', MQ.ref).then(function (r) { if (r && r.b64) usa(r); else call('apiFoto', MQ.ref).then(usa); }, function () { call('apiFoto', MQ.ref).then(usa); });
 }
 function mqLerImagem(input, cb) {
   var f = input.files && input.files[0]; if (!f) return;
