@@ -780,9 +780,15 @@ function mqVista(v) { MQ.vista = v; if (v !== 'FC') MQ.lado = v; irMaquete(); }
 function mqPos(x, y, w) { var L = ladoAtual(); L.x = x; L.y = y; if (w && L.des) { L.wcm = w; var i = $('mqW'); if (i) i.value = w; dtfDoDesenho(); } mqDesenhar(); }
 function mqTirar() { var L = ladoAtual(); L.des = null; L.orig = null; irMaquete(); }
 function mqProduto() { PICK = { i: null, cb: function (lab, ref) { MQ.lab = lab; MQ.ref = ref; MQ.peca = null; MQ.modo = 'foto'; irMaquete(); } }; abrirModal(); }
+// foto grande (pasta HD) com prazo: se o servidor demorar, segue com a miniatura do catálogo
+function fotoHD(ref) {
+  var cache = fotoHD.c || (fotoHD.c = {}); if (cache[ref] !== undefined) return Promise.resolve(cache[ref]);
+  return Promise.race([call('apiFotoHD', ref).then(function (r) { cache[ref] = r || null; return r; }, function () { return null; }),
+    new Promise(function (ok) { setTimeout(function () { carregando(false); ok(null); }, 12000); })]);
+}
 function mqCarregarFoto() {   // primeiro a foto grande da proposta (pasta "INOVASTAMP - Fotos Proposta"); se não houver, a miniatura do catálogo
   var usa = function (r) { var im = new Image(); im.onload = function () { MQ.peca = im; mqDesenhar(); }; im.src = 'data:' + r.tipo + ';base64,' + r.b64; };
-  call('apiFotoHD', MQ.ref).then(function (r) { if (r && r.b64) usa(r); else call('apiFoto', MQ.ref).then(usa); }, function () { call('apiFoto', MQ.ref).then(usa); });
+  var ref = MQ.ref; fotoHD(ref).then(function (r) { if (MQ.ref !== ref) return; if (r && r.b64) usa(r); else call('apiFoto', ref).then(usa); });
 }
 function mqLerImagem(input, cb) {
   var f = input.files && input.files[0]; if (!f) return;
@@ -1273,7 +1279,7 @@ function mqTodas(cb) {
       propGerar(function (c) { c.toBlob(function (b) { fs.push(new File([b], mqNome(), { type: 'image/png' })); i++; aPreparar('mqTodasZona', 'A preparar as propostas… ' + i + ' de ' + MQ.orcLinhas.length); prox(); }, 'image/png'); });
     };
     var usa = function (r) { if (!r || !r.b64) { gerar(null); return; } var im = new Image(); im.onload = function () { gerar(im); }; im.onerror = function () { gerar(null); }; im.src = 'data:' + r.tipo + ';base64,' + r.b64; };
-    call('apiFotoHD', l.ref).then(function (r) { if (r && r.b64) usa(r); else call('apiFoto', l.ref).then(usa, function () { usa(null); }); }, function () { call('apiFoto', l.ref).then(usa, function () { usa(null); }); });
+    fotoHD(l.ref).then(function (r) { if (r && r.b64) usa(r); else call('apiFoto', l.ref).then(usa, function () { usa(null); }); });
   };
   prox();
 }
