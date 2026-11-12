@@ -808,7 +808,7 @@ function mqLogos() {
 }
 function mqUsarLogo(i) {
   var x = LOGOS[i], L = ladoAtual(), im = new Image();
-  im.onload = function () { L.orig = im; L.src = im.src; L.nome = x.nome; L.tipo = x.tipo; mqProcessarLado(L, function () { irMaquete(); dtfDoDesenho(); }); };
+  im.onload = function () { L.orig = im; L.src = im.src; L.nome = x.nome; L.tipo = x.tipo; mqProcessarLado(L, function () { if (MQ.orcLinhas) MQ.logoBase = { orig: L.orig, des: L.des, src: L.src, nome: L.nome, tipo: L.tipo }; irMaquete(); dtfDoDesenho(); }); };
   im.src = 'data:' + x.tipo + ';base64,' + x.b64;
 }
 function mqGuardarLogo() {
@@ -1210,9 +1210,10 @@ function maqueteDoOrc() {
   var vistos = {};
   MQ.orcLinhas = o.linhas.filter(function (l) { var k = l.ref + '|' + (l.cor || ''); if (!l.ref || vistos[k]) return false; vistos[k] = 1; return true; })
     .map(function (l) { return { produto: l.produto, ref: l.ref, cor: l.cor || '', pers: [l.pers1, l.pers2].filter(Boolean).join(' + ') }; });
-  MQ.posOrc = {}; MQ.orcI = -1;
+  MQ.posOrc = {}; MQ.orcI = -1; MQ.logoBase = null; MQ.L.F.orig = null; MQ.L.F.des = null; MQ.L.F.src = null;
   PROP.formato = 'proposta';
-  if (MQ.orcLinhas.length) mqArtigoOrc(0, true); else irMaquete();
+  var i0 = 0; MQ.orcLinhas.some(function (l, i) { if (l.pers) { i0 = i; return true; } });
+  if (MQ.orcLinhas.length) mqArtigoOrc(i0, true); else irMaquete();
   // põe logo o logótipo do cliente (o 1.º guardado), se ainda não houver desenho
   call('apiLogos', o.cliente, o.nif || '').then(function (l) {
     LOGOS = l; mqTomLogos();
@@ -1238,7 +1239,8 @@ function mqArtigoOrc(i, primeira) {
   MQ.orcI = i; MQ.modo = 'foto'; MQ.lab = l.produto; MQ.ref = l.ref; MQ.peca = null; MQ.corOrc = l.cor; MQ.tecOrc = l.pers;
   var p = MQ.posOrc[l.ref];
   if (p) mqPorPos(p);
-  else { var li = mqLogoParaCor(l.cor); if (li >= 0 && LOGOS[li].nome !== MQ.L.F.nome) { MQ.lado = 'F'; mqUsarLogo(li); return; } }
+  else if (!l.pers && MQ.logoBase) { var Lx = MQ.L.F; Lx.orig = null; Lx.des = null; Lx.src = null; }
+  else { if (MQ.logoBase && !MQ.L.F.des) mqPorPos(MQ.logoBase); var li = mqLogoParaCor(l.cor); if (li >= 0 && LOGOS[li].nome !== MQ.L.F.nome) { MQ.lado = 'F'; mqUsarLogo(li); return; } }
   irMaquete();
 }
 function mqOrcCartao() {
@@ -1263,7 +1265,8 @@ function mqTodas(cb) {
     }
     var l = MQ.orcLinhas[i];
     MQ.lab = l.produto; MQ.ref = l.ref; MQ.corOrc = l.cor; MQ.tecOrc = l.pers; MQ.orcI = i;
-    var p = MQ.posOrc[l.ref]; mqPorPos(p || guard);
+    var p = MQ.posOrc[l.ref];
+    if (p) mqPorPos(p); else if (!l.pers && MQ.logoBase) { mqPorPos(guard); L.orig = null; L.des = null; L.src = null; } else mqPorPos(MQ.logoBase ? Object.assign({}, guard, MQ.logoBase) : guard);
     var gerar = function (im) {
       MQ.peca = im;
       propGerar(function (c) { c.toBlob(function (b) { fs.push(new File([b], mqNome(), { type: 'image/png' })); i++; aPreparar('mqTodasZona', 'A preparar as propostas… ' + i + ' de ' + MQ.orcLinhas.length); prox(); }, 'image/png'); });
@@ -1443,7 +1446,7 @@ function claroOuEscuro(img) {   // o logótipo é claro (branco)? → cartão es
     var d = y.getImageData(0, 0, 60, 60).data, s = 0, n = 0; for (var i = 0; i < d.length; i += 4) if (d[i + 3] > 128) { s += d[i] + d[i + 1] + d[i + 2]; n++; }
     return n && s / n > 600 ? 'claro' : 'escuro'; } catch (e) { return 'escuro'; }
 }
-function logoCliente() { var L = MQ.L.F.orig ? MQ.L.F : MQ.L.C; return L.orig || null; }
+function logoCliente() { var L = MQ.L.F.orig ? MQ.L.F : MQ.L.C; return L.orig || (MQ.logoBase && MQ.logoBase.orig) || null; }
 function propPosicao(l) {
   var L = MQ.L[l]; if (!L.des) return '';
   var p = MQ.modo === 'foto' ? (L.y < 0.45 && Math.abs(L.x - 0.5) > 0.06 ? 'no peito ' + (L.x > 0.5 ? 'esquerdo' : 'direito') : 'na frente') : (l === 'C' ? 'nas costas' : (Math.abs(L.x - 0.5) > 0.06 ? 'no peito ' + (L.x > 0.5 ? 'esquerdo' : 'direito') : 'na frente'));
@@ -1452,7 +1455,7 @@ function propPosicao(l) {
 function propGerar(cb) {
   var d = propDados(), cli = (mqCliente() || 'Cliente').toUpperCase(), logoC = logoCliente();
   var tec = d.tec, lados = (MQ.modo === 'foto' ? ['F'] : ['F', 'C']).filter(function (l) { return MQ.L[l].des; });
-  var pers = 'Logótipo ' + cli + ' ' + lados.map(propPosicao).join(' e ') + ' · ' + tec;
+  var pers = lados.length ? 'Logótipo ' + cli + ' ' + lados.map(propPosicao).join(' e ') + ' · ' + tec : 'Pronto a personalizar com o logótipo ' + cli + ' · serigrafia ou DTF, no tamanho e posição que preferir';
   // maquete em alta resolução
   var t = mqTamanhoCv(), W0 = t.W, H0 = t.H, k = 1400 / W0, off = document.createElement('canvas'); off.width = Math.round(W0 * k); off.height = Math.round(H0 * k);
   var ox = off.getContext('2d'); ox.setTransform(k, 0, 0, k, 0, 0);
@@ -1523,7 +1526,7 @@ function propGerar(cb) {
     if (MQ.modo !== 'foto' && MQ.L.F.des && MQ.L.C.des) { x.fillStyle = '#eef1f6'; x.fillRect(X, y, dW, dH); var kd = Math.min((dW - 30) / zDet[2], (dH - 60) / zDet[3]); x.drawImage(off, zDet[0], zDet[1], zDet[2], zDet[3], X + (dW - zDet[2] * kd) / 2, y + 12, zDet[2] * kd, zDet[3] * kd); }
     else cobrir(x, off, zDet[0], zDet[1], zDet[2], zDet[3], X, y, dW, dH);
     x.restore();
-    var lbD = MQ.modo !== 'foto' && MQ.L.F.des && MQ.L.C.des ? 'COSTAS' : 'DETALHE DO LOGÓTIPO'; x.font = '700 13px ' + F; esp(x, '2.5px'); var lbw = x.measureText(lbD).width;
+    var lbD = MQ.modo !== 'foto' && MQ.L.F.des && MQ.L.C.des ? 'COSTAS' : (lados.length ? 'DETALHE DO LOGÓTIPO' : 'DETALHE'); x.font = '700 13px ' + F; esp(x, '2.5px'); var lbw = x.measureText(lbD).width;
     x.fillStyle = '#C2268F'; rr(x, X + 14, y + dH - 46, lbw + 28, 32, 16); x.fill(); x.fillStyle = '#fff'; x.fillText(lbD, X + 28, y + dH - 25); esp(x, '0px');
     var fx = X + dW + 7 * mm, fw = XR - fx, fy = y + 6;
     var feats = String(d.feats || '').split('\n').map(function (s) { return s.trim(); }).filter(String);
