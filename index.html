@@ -309,6 +309,187 @@ function partilharFicheiro(f, texto, titulo, zona, depois, alternativa) {
 }
 function aPreparar(zona, t) { if ($(zona)) $(zona).innerHTML = '<div class="card mut" style="text-align:center">' + (t || 'A preparar…') + '</div>'; }
 
+// ---------------- Orçamento em PDF no modelo novo (mesma linguagem da proposta) ----------------
+// Desenhado aqui na app (A4 ao alto) e guardado no Drive no lugar do PDF antigo (apiPdfGuardar).
+var ORC_MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+function orcData(iso, mais) { var d = new Date(String(iso).substring(0, 10) + 'T12:00:00'); if (isNaN(d)) return ''; if (mais) d.setDate(d.getDate() + Number(mais)); return d.getDate() + ' ' + ORC_MESES[d.getMonth()] + ' ' + d.getFullYear(); }
+function orcEur(v) { return (Math.round((Number(v) || 0) * 100) / 100).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' €'; }
+function corSemCodigo(c) { return String(c || '').replace(/^\s*\d+\s+/, '').trim(); }
+function imgDeR(r) { return r && r.b64 ? imgDe('data:' + r.tipo + ';base64,' + r.b64) : Promise.resolve(null); }
+function semFalha(p) { return p.then(function (r) { return r; }, function () { carregando(false); return null; }); }
+function orcRecursos(o) {
+  var refs = []; o.linhas.forEach(function (l) { if (l.ref && refs.indexOf(l.ref) < 0) refs.push(l.ref); });
+  var fotos = {};
+  var pF = refs.reduce(function (p, ref) {   // uma a uma (o servidor responde melhor assim)
+    return p.then(function () { return fotoHD(ref).then(function (r) { return r && r.b64 ? r : semFalha(call('apiFoto', ref)); }).then(imgDeR).then(function (im) { fotos[ref] = im; }); });
+  }, Promise.resolve());
+  var pL = semFalha(call('apiLogos', o.cliente, o.nif || '')).then(function (l) {
+    l = l || []; return Promise.all(l.map(function (x) { return imgDeR(x); })).then(function (ims) {
+      var esc = null, qq = null; ims.forEach(function (im) { if (!im) return; if (!qq) qq = im; if (!esc && claroOuEscuro(im) === 'escuro') esc = im; }); return esc || qq;
+    });
+  });
+  var pQ = semFalha(call('apiQrAceitar', o.num)).then(imgDeR);
+  var pI = imgDe(LOGO_INO);
+  var pFt = document.fonts && document.fonts.load ? Promise.all(['400', '500', '600', '700', '800', '900'].map(function (w) { return document.fonts.load(w + ' 20px Inter').catch(function () {}); })) : Promise.resolve();
+  return Promise.all([pF, pL, pQ, pI, pFt]).then(function (r) { return { fotos: fotos, logoC: r[1], qr: r[2], ino: r[3] }; });
+}
+// devolve uma lista de canvas (uma por página)
+function orcDesenhar(o, R) {
+  var F = '"Inter", Arial, sans-serif', S = 2, PW = 794, PH = 1123, M = 49, XR = PW - M;
+  var pags = [], x = null;
+  function novaPag() { var c = document.createElement('canvas'); c.width = PW * S; c.height = PH * S; x = c.getContext('2d'); x.setTransform(S, 0, 0, S, 0, 0); x.fillStyle = '#fff'; x.fillRect(0, 0, PW, PH); x.textBaseline = 'alphabetic'; pags.push(c); }
+  function fnt(w, s) { x.font = w + ' ' + s + 'px ' + F; }
+  function txt(t, X, Y, cor, w, s, alinhar, ls) { fnt(w, s); x.fillStyle = cor; esp(x, (ls || 0) + 'px'); x.textAlign = alinhar || 'left'; x.fillText(t, X, Y); esp(x, '0px'); x.textAlign = 'left'; }
+  function larg(t, w, s, ls) { fnt(w, s); esp(x, (ls || 0) + 'px'); var v = x.measureText(t).width; esp(x, '0px'); return v; }
+  function cab(X, Y, W, H) { var g = x.createRadialGradient(X + W, Y, 10, X + W, Y, W * 1.25); g.addColorStop(0, '#2b4a85'); g.addColorStop(0.5, '#1a2c52'); g.addColorStop(1, '#0f1a30'); x.fillStyle = g; x.fillRect(X, Y, W, H);
+    var b = x.createLinearGradient(0, 0, PW, 0); b.addColorStop(0, '#C2268F'); b.addColorStop(0.45, '#7b3fa0'); b.addColorStop(1, '#1f8fd6'); x.fillStyle = b; x.fillRect(X, Y + H - 3, W, 3); }
+  function cartao(im, X, Y, h, maxW, escuro, dir) {   // logótipo num cartão branco (ou escuro)
+    if (!im) return 0; var ih = h - 18, iw = Math.min(maxW - 18, ih * im.width / im.height); ih = iw * im.height / im.width; var w = iw + 18, X0 = dir ? X - w : X;
+    x.fillStyle = escuro ? '#0f1a30' : '#fff'; rr(x, X0, Y, w, h, 12); x.fill(); x.drawImage(im, X0 + 9, Y + (h - ih) / 2, iw, ih); return w; }
+  var nPecas = 0, soma = 0; o.linhas.forEach(function (l) { nPecas += Number(l.qtd) || 0; soma += Number(l.totS) || 0; });
+  var cli = String(o.cliente || '').toUpperCase(), marca = marcaCli(cli);
+  var compacto = o.linhas.length > 3, RH = compacto ? 92 : 112, FH = compacto ? 76 : 94, FW = compacto ? 70 : 88;
+  var rodapeY = PH - 48, resumoH = 330;
+  var npag = 1, pg = 1;
+  // ---------- página 1: cabeçalho ----------
+  novaPag(); cab(0, 0, PW, 270);
+  var lw = cartao(R.ino, M, 34, 62, 120);
+  cartao(R.logoC, XR, 38, 54, 170, R.logoC && claroOuEscuro(R.logoC) === 'claro', true);
+  txt('PROPOSTA COMERCIAL', M, 121, '#aab6d3', 600, 9, 'left', 2.6);
+  txt('Orçamento', M - 2, 160, '#fff', 900, 44, 'left', -1.5);
+  txt('Nº ' + o.num, M, 184, '#f3b6dc', 700, 13, 'left', 1);
+  txt('PREPARADO PARA', XR, 140, '#aab6d3', 600, 9, 'right', 2.6);
+  var fs = 17; while (larg(cli, 800, fs) > 330 && fs > 12) fs--;
+  if (larg(cli, 800, fs) > 330) { fnt(800, 13); var nl = linhas(x, cli, 330).slice(0, 2); nl.forEach(function (s, i) { txt(s, XR, 160 + i * 16, '#fff', 800, 13, 'right'); }); }
+  else txt(cli, XR, 164, '#fff', 800, fs, 'right');
+  var sub = [o.nif ? 'NIF ' + o.nif : '', [o.morada, o.cp].filter(String).join(', ')].filter(String).join(' · ');
+  if (sub) { var ss = 10; while (larg(sub, 400, ss) > 360 && ss > 7.5) ss -= 0.5; txt(sub, XR, 186, '#aab6d3', 400, ss, 'right'); }
+  x.fillStyle = 'rgba(255,255,255,.14)'; x.fillRect(M, 207, XR - M, 1);
+  [['Data', orcData(o.data)], ['Válido até', orcData(o.data, o.validade || 30)], ['Peças', nPecas + (nPecas === 1 ? ' unidade' : ' unidades')], ['Contacto', 'Hugo · INOVASTAMP']].forEach(function (m, i) {
+    var X = M + i * 174; txt(m[0].toUpperCase(), X, 232, '#aab6d3', 600, 8, 'left', 2); txt(m[1], X, 249, '#fff', 600, 11.5); });
+  // introdução
+  var y = 300; fnt(400, 11); var intro = 'Obrigado pelo interesse. Segue a nossa proposta para ' + (marca || cli) + ', com as peças, as cores e a personalização indicadas. Os valores são por unidade e não incluem IVA.';
+  linhas(x, intro, XR - M).forEach(function (s) { txt(s, M, y, '#4a5570', 400, 11); y += 17; });
+  function cabTabela(Y) { txt('ARTIGO', M + FW + 24, Y, '#8a93a8', 700, 8, 'left', 2); txt('QTD.', 540, Y, '#8a93a8', 700, 8, 'right', 2); txt('PREÇO UN.', 632, Y, '#8a93a8', 700, 8, 'right', 2); txt('TOTAL', XR, Y, '#8a93a8', 700, 8, 'right', 2);
+    x.fillStyle = '#14213D'; x.fillRect(M, Y + 10, XR - M, 1.5); return Y + 12; }
+  y = cabTabela(y + 18);
+  function rodape() {
+    x.fillStyle = '#e6e9f0'; x.fillRect(0, rodapeY, PW, 1);
+    txt('INOVASTAMP, Lda', M, rodapeY + 28, '#14213D', 700, 8.6); var w0 = larg('INOVASTAMP, Lda', 700, 8.6); txt(' · Estamparia têxtil · serigrafia e DTF', M + w0, rodapeY + 28, '#8a93a8', 400, 8.6);
+    txt('joaoinovastamp@gmail.com · Póvoa de Lanhoso' + (npag > 1 ? ' · página ' + pg + '/' + npag : ''), XR, rodapeY + 28, '#8a93a8', 400, 8.6, 'right');
+  }
+  // quantas páginas: linhas que cabem
+  var cap1 = Math.floor((rodapeY - 12 - y) / RH), capN = Math.floor((rodapeY - 12 - 120) / RH);
+  var nL = o.linhas.length, cabeUlt = function (nn, ini) { return ini + nn * RH + resumoH <= rodapeY - 6; };
+  // distribuir
+  var dist = [], resto = nL, primeira = true;
+  while (resto > 0 || !dist.length) { var cap = primeira ? cap1 : capN; var k = Math.min(resto, cap); dist.push(k); resto -= k; primeira = false; if (resto <= 0) break; }
+  var iniUlt = dist.length === 1 ? y : 132; if (!cabeUlt(dist[dist.length - 1], iniUlt)) dist.push(0);
+  npag = dist.length;
+  var li = 0;
+  dist.forEach(function (k, p) {
+    if (p > 0) {   // páginas seguintes: faixa curta
+      rodape(); pg++; novaPag(); cab(0, 0, PW, 76); txt('ORÇAMENTO ' + o.num, M, 44, '#fff', 800, 14, 'left', 1); txt(cli, XR, 44, '#aab6d3', 600, 10, 'right'); y = 112;
+      if (k) y = cabTabela(y);
+    }
+    for (var q = 0; q < k; q++, li++) {
+      var l = o.linhas[li], nm = propNomes(l.produto, l.ref), im = R.fotos[l.ref];
+      var cy = y + 9;
+      x.fillStyle = '#eef1f5'; rr(x, M, cy, FW, FH, 10); x.fill();
+      if (im) { x.save(); rr(x, M, cy, FW, FH, 10); x.clip(); x.fillStyle = '#fff'; x.fillRect(M, cy, FW, FH); var kk = Math.min(FW / im.width, FH / im.height), cov = Math.max(FW / im.width, FH / im.height);
+        var k2 = im.height / im.width > 1.15 ? cov : kk; var dw = im.width * k2, dh = im.height * k2; x.drawImage(im, M + (FW - dw) / 2, cy + (FH - dh) * (k2 === cov ? 0.15 : 0.5), dw, dh); x.restore(); }
+      var tx = M + FW + 24, tw = 470 - tx, ty = cy + (compacto ? 20 : 26);
+      var tt = String(nm.t || '').toUpperCase(), tf = compacto ? 15 : 17; while (larg(tt, 900, tf) > tw && tf > 10) tf--;
+      txt(tt, tx, ty, '#14213D', 900, tf, 'left', -0.3);
+      if (nm.s) { fnt(400, 10.5); txt(linhas(x, nm.s, tw)[0], tx, ty + 15, '#4a5570', 400, 10.5); }
+      var chy = ty + (compacto ? 23 : 26), chx = tx;
+      var chips = []; if (l.cor) chips.push({ t: corSemCodigo(l.cor), c: corHex(corSemCodigo(l.cor)) }); if (l.tam) chips.push({ t: String(l.tam) });
+      chips.forEach(function (c) { var w = larg(c.t, 600, 9) + (c.c ? 24 : 14); if (chx + w > 480) return; x.strokeStyle = '#d5dae5'; x.lineWidth = 1; rr(x, chx, chy, w, 17, 8.5); x.stroke();
+        if (c.c) { x.fillStyle = c.c; x.beginPath(); x.arc(chx + 10, chy + 8.5, 4, 0, 7); x.fill(); x.strokeStyle = '#b9c0cc'; x.lineWidth = .6; x.stroke(); }
+        txt(c.t, chx + (c.c ? 18 : 7), chy + 12, '#33405e', 600, 9); chx += w + 5; });
+      var pers = [l.pers1, l.pers2].filter(function (s) { return String(s || '').trim(); }).join(' + ');
+      var py = chy + (compacto ? 31 : 34);
+      x.fillStyle = pers ? '#C2268F' : '#c6ccd9'; x.beginPath(); x.arc(tx + 3.5, py - 3.5, 3.5, 0, 7); x.fill();
+      var ptxt = pers ? 'Personalização: ' + pers : 'Sem personalização'; fnt(600, 10); ptxt = linhas(x, ptxt, tw - 12)[0];
+      txt(ptxt, tx + 12, py, pers ? '#14213D' : '#8a93a8', 600, 10);
+      var my = cy + FH / 2 + 4;
+      txt(String(l.qtd), 540, my, '#14213D', 600, 12, 'right');
+      txt(orcEur(l.unitS), 632, my - 3, '#14213D', 600, 12, 'right');
+      txt(Number(l.persU) > 0 ? 'peça + personalização' : 'por unidade', 632, my + 10, '#8a93a8', 500, 8, 'right');
+      txt(orcEur(l.totS), XR, my, '#14213D', 800, 13.5, 'right');
+      y += RH; x.fillStyle = '#e6e9f0'; x.fillRect(M, y, XR - M, 1);
+    }
+    if (p === dist.length - 1) {
+      // ---------- resumo: condições + totais ----------
+      var ry = y + 24;
+      txt('CONDIÇÕES', M, ry + 8, '#8a93a8', 700, 8, 'left', 2.4);
+      var cond = ['Proposta válida por ' + (o.validade || 30) + ' dias a contar da data.', 'Valores sem IVA; acresce IVA à taxa legal em vigor.',
+        'Produção após aprovação da maquete; prazo indicado na adjudicação.', 'Tamanhos confirmados por colaborador antes da produção.'];
+      if (o.obs) cond.push(String(o.obs));
+      var cyy = ry + 28; fnt(400, 10.2);
+      cond.forEach(function (c) { linhas(x, c, 360).slice(0, 3).forEach(function (s, i) { if (i === 0) { x.fillStyle = '#1f8fd6'; x.beginPath(); x.arc(M + 2.5, cyy - 3.5, 2.5, 0, 7); x.fill(); } txt(s, M + 12, cyy, '#33405e', 400, 10.2); cyy += 15; }); cyy += 3; });
+      var bx = XR - 280, bw = 280, by = ry - 4, desc = soma - (Number(o.tS) || 0), iva = (Number(o.tC) || 0) - (Number(o.tS) || 0);
+      var linhasT = [['Subtotal', orcEur(soma)]]; if (desc > 0.009) linhasT.push(['Desconto' + (o.desconto ? ' ' + Math.round(Number(o.desconto) * (Number(o.desconto) < 1 ? 100 : 1)) + '%' : ''), '− ' + orcEur(desc)]);
+      linhasT.push(['IVA ' + (Number(o.tS) > 0 ? Math.round(iva / Number(o.tS) * 100) : 23) + '%', orcEur(iva)]);
+      var bh = linhasT.length * 33 + 16 + 58 + 26;
+      x.strokeStyle = '#e1e5ee'; x.lineWidth = 1; rr(x, bx, by, bw, bh, 14); x.stroke();
+      linhasT.forEach(function (t, i) { txt(t[0], bx + 19, by + 28 + i * 33, '#4a5570', 400, 11); txt(t[1], bx + bw - 19, by + 28 + i * 33, '#14213D', 700, 11, 'right'); });
+      var gy = by + linhasT.length * 33 + 16; x.save(); rr(x, bx, by, bw, bh, 14); x.clip();
+      x.fillStyle = '#14213D'; x.fillRect(bx, gy, bw, 58); txt('TOTAL', bx + 19, gy + 35, '#aab6d3', 700, 8.5, 'left', 2.2); txt(orcEur(o.tC), bx + bw - 19, gy + 39, '#fff', 900, 24, 'right', -0.5);
+      x.fillStyle = '#fbeef6'; x.fillRect(bx, gy + 58, bw, 26); x.restore();
+      txt(nPecas + ' peças · ≈ ' + orcEur(nPecas ? (Number(o.tS) || 0) / nPecas : 0) + ' por peça + IVA', bx + bw - 19, gy + 75, '#9b1c72', 600, 9.5, 'right');
+      // ---------- próximo passo ----------
+      var pyy = rodapeY - 22 - 132, ph = 132;
+      var g2 = x.createLinearGradient(M, 0, XR, 0); g2.addColorStop(0, '#C2268F'); g2.addColorStop(1, '#8d2a9c'); x.fillStyle = g2; rr(x, M, pyy, XR - M, ph, 16); x.fill();
+      txt('PRÓXIMO PASSO', M + 23, pyy + 30, '#f8cde8', 700, 8, 'left', 2.4);
+      txt('Aprove o orçamento num clique', M + 23, pyy + 56, '#fff', 800, 17);
+      fnt(400, 10); linhas(x, 'Leia o código ou carregue no link da mensagem. Confirmamos os tamanhos de cada colaborador e avançamos para produção.', 470).slice(0, 2).forEach(function (s, i) { txt(s, M + 23, pyy + 76 + i * 14, 'rgba(255,255,255,.92)', 400, 10); });
+      var sx = M + 23; ['1 · Aprovar', '2 · Tamanhos', '3 · Produção', '4 · Entrega'].forEach(function (s) { var w = larg(s, 600, 9) + 16; x.fillStyle = 'rgba(255,255,255,.16)'; rr(x, sx, pyy + 104, w, 17, 8.5); x.fill(); txt(s, sx + 8, pyy + 116, '#fff', 600, 9); sx += w + 8; });
+      if (R.qr) { var qs = 96; x.fillStyle = '#fff'; rr(x, XR - 23 - qs - 16, pyy + (ph - qs - 16) / 2, qs + 16, qs + 16, 10); x.fill(); x.drawImage(R.qr, XR - 23 - qs - 8, pyy + (ph - qs) / 2, qs, qs); }
+    }
+  });
+  rodape();
+  return pags;
+}
+// PDF simples com uma imagem JPEG por página (A4)
+function pdfDeJpegs(pgs) {
+  var enc = new TextEncoder(), partes = [], off = 0, xref = [];
+  function add(s) { var u = typeof s === 'string' ? enc.encode(s) : s; partes.push(u); off += u.length; }
+  function obj(n, corpo, stream) { xref[n] = off; add(n + ' 0 obj\n' + corpo); if (stream) { add('\nstream\n'); add(stream); add('\nendstream'); } add('\nendobj\n'); }
+  add('%PDF-1.4\n');
+  var n = pgs.length, kids = [];
+  for (var i = 0; i < n; i++) kids.push((3 + i * 3) + ' 0 R');
+  obj(1, '<< /Type /Catalog /Pages 2 0 R >>');
+  obj(2, '<< /Type /Pages /Kids [' + kids.join(' ') + '] /Count ' + n + ' >>');
+  pgs.forEach(function (p, i) {
+    var pn = 3 + i * 3, cn = pn + 1, im = pn + 2, cont = 'q 595.28 0 0 841.89 0 0 cm /Im0 Do Q';
+    obj(pn, '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /XObject << /Im0 ' + im + ' 0 R >> >> /Contents ' + cn + ' 0 R >>');
+    obj(cn, '<< /Length ' + cont.length + ' >>', enc.encode(cont));
+    obj(im, '<< /Type /XObject /Subtype /Image /Width ' + p.w + ' /Height ' + p.h + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + p.b.length + ' >>', p.b);
+  });
+  var total = 3 + n * 3, xo = off, s = 'xref\n0 ' + total + '\n0000000000 65535 f \n';
+  for (var j = 1; j < total; j++) s += String(xref[j]).padStart(10, '0') + ' 00000 n \n';
+  add(s + 'trailer\n<< /Size ' + total + ' /Root 1 0 R >>\nstartxref\n' + xo + '\n%%EOF');
+  var out = new Uint8Array(off), p0 = 0; partes.forEach(function (u) { out.set(u, p0); p0 += u.length; }); return out;
+}
+function canvasJpeg(c) { return new Promise(function (ok) { c.toBlob(function (b) { b.arrayBuffer().then(function (a) { ok({ b: new Uint8Array(a), w: c.width, h: c.height }); }); }, 'image/jpeg', 0.9); }); }
+function b64DeBytes(u) { var s = '', k = 0x8000; for (var i = 0; i < u.length; i += k) s += String.fromCharCode.apply(null, u.subarray(i, i + k)); return btoa(s); }
+// gera o PDF novo de um orçamento e guarda-o no Drive (substitui o antigo)
+function orcPdfNovo(num, dados) {
+  var pO = dados ? Promise.resolve(dados) : call('apiAbrir', num);
+  return pO.then(function (o) { return orcRecursos(o).then(function (R) { return Promise.all(orcDesenhar(o, R).map(canvasJpeg)); }); })
+    .then(function (pgs) { return call('apiPdfGuardar', num, b64DeBytes(pdfDeJpegs(pgs))); });
+}
+// refaz todos os PDFs já criados (um a um)
+function orcRefazerTodos(cb) {
+  var feitos = [], falhas = [];
+  return call('apiLista').then(function (l) {
+    var nums = l.map(function (o) { return o.num; });
+    return nums.reduce(function (p, n) { return p.then(function () { return orcPdfNovo(n).then(function () { feitos.push(n); if (cb) cb(n, feitos.length, nums.length); }, function (e) { falhas.push(n); }); }); }, Promise.resolve())
+      .then(function () { return { feitos: feitos, falhas: falhas }; });
+  });
+}
+
 // ---------------- WhatsApp ----------------
 // 1.º toque: prepara o PDF; 2.º toque: partilha (o telemóvel exige um toque para abrir a partilha)
 var WA = null;
@@ -519,9 +700,10 @@ function calcular(guardar, forcar) {
       LISTA = []; STOCK = null;
       if (r.estado) { ED.estado = r.estado; $('eEst').value = r.estado; }
       msg('Guardado: ' + r.numero + (r.cliMsg ? ' · ' + r.cliMsg : '') + (r.msgs && r.msgs.length ? '\n' + r.msgs.join('\n') : ''));
-      $('eDepois').innerHTML = '<div class="acts">' + (r.pdf ? '<button class="btn sec" onclick="abrirPdf(\'' + esc(r.numero) + '\')">Abrir PDF</button>' : '') +
+      var botoes = function () { $('eDepois').innerHTML = '<div class="acts">' + (r.pdf ? '<button class="btn sec" onclick="abrirPdf(\'' + esc(r.numero) + '\')">Abrir PDF</button>' : '') +
         '<button class="btn" onclick="enviar(\'' + esc(r.numero) + '\',\'' + esc(ED.email) + '\')">Enviar por email</button></div>' +
-        '<div class="acts"><button class="btn sec" onclick="abrir(\'' + esc(r.numero) + '\')">Ver orçamento (WhatsApp, encomenda…)</button></div>';
+        '<div class="acts"><button class="btn sec" onclick="abrir(\'' + esc(r.numero) + '\')">Ver orçamento (WhatsApp, encomenda…)</button></div>'; };
+      if (r.pdf) { $('eDepois').innerHTML = '<div class="card mut" style="text-align:center">A preparar o PDF…</div>'; orcPdfNovo(r.numero).then(botoes, botoes); } else botoes();
       call('apiInit').then(function (d) { D = d; });
     }
   });
