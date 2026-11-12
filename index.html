@@ -737,7 +737,7 @@ function irMaquete() {
   navOn('n-maq'); $('titulo').textContent = 'Maquete e DTF';
   var L = ladoAtual(), foto = MQ.modo === 'foto';
   var h = sepMaq('maq') + '<div class="chips"><button class="chip' + (!foto ? ' on' : '') + '" onclick="MQ.modo=\'modelo\';irMaquete()">Modelo (frente e costas)</button>' +
-    '<button class="chip' + (foto ? ' on' : '') + '" onclick="MQ.modo=\'foto\';irMaquete()">Foto do catálogo</button></div>' +
+    '<button class="chip' + (foto ? ' on' : '') + '" onclick="MQ.modo=\'foto\';irMaquete()">Foto do catálogo</button></div>' + mqOrcCartao() +
     '<div class="card"><div class="g2"><div><label>Cliente</label><input id="mqCli" list="dlMqCli" value="' + esc(MQ.cli ? MQ.cli.nome : '') + '" onchange="mqEscolherCliente(this.value)">' +
     '<datalist id="dlMqCli">' + D.clientes.map(function (c) { return '<option value="' + esc(c[0]) + '">'; }).join('') + '</datalist></div>' +
     '<div><label>Orçamento</label><input id="mqOrc" value="' + esc(MQ.orc || '') + '" placeholder="ORC-2026-…" autocapitalize="characters" onchange="MQ.orc=this.value.trim().toUpperCase()"></div></div>' +
@@ -793,6 +793,7 @@ function mqDesenho(inp) { var L = ladoAtual(); mqLerImagem(inp, function (im, sr
 function mqEscolherCliente(nome) {
   var c = D.clientes.filter(function (x) { return x[0].toLowerCase() === String(nome).trim().toLowerCase(); })[0];
   MQ.cli = c ? { nome: c[0], nif: c[1], email: c[2], tel: c[3] } : (nome ? { nome: nome.trim(), nif: '', email: '', tel: '' } : null);
+  MQ.orcLinhas = null; MQ.corOrc = ''; MQ.tecOrc = '';
   $('logoZona').innerHTML = '';
 }
 var LOGOS = [];
@@ -1202,11 +1203,92 @@ function mensagem(tipo, link, zona) {
 }
 function msgWhats() { window.open('https://wa.me/' + telWa(ATUAL.tel) + '?text=' + encodeURIComponent($('mTxt').value), '_blank'); }
 function msgEmail() { var z = $('mTxt').parentNode; call('apiEmailCliente', ATUAL.num, $('mAss').value, $('mTxt').value).then(function (r) { msg('Email enviado para ' + r.email); z.innerHTML = ''; }); }
-// --- maquete a partir do orçamento ---
+// --- maquete a partir do orçamento: uma proposta por artigo (sem quantidades nem preços) ---
 function maqueteDoOrc() {
   var o = ATUAL; if (!o) return;
   MQ.orc = o.num; MQ.cli = { nome: o.cliente, nif: o.nif, email: o.email, tel: o.tel };
+  var vistos = {};
+  MQ.orcLinhas = o.linhas.filter(function (l) { var k = l.ref + '|' + (l.cor || ''); if (!l.ref || vistos[k]) return false; vistos[k] = 1; return true; })
+    .map(function (l) { return { produto: l.produto, ref: l.ref, cor: l.cor || '', pers: [l.pers1, l.pers2].filter(Boolean).join(' + ') }; });
+  MQ.posOrc = {}; MQ.orcI = -1;
+  PROP.formato = 'proposta';
+  if (MQ.orcLinhas.length) mqArtigoOrc(0, true); else irMaquete();
+  // põe logo o logótipo do cliente (o 1.º guardado), se ainda não houver desenho
+  call('apiLogos', o.cliente, o.nif || '').then(function (l) {
+    LOGOS = l; mqTomLogos();
+    if (l.length && !MQ.L.F.orig) setTimeout(function () { var li = mqLogoParaCor(MQ.corOrc); MQ.lado = 'F'; mqUsarLogo(li >= 0 ? li : 0); }, 300);
+  });
+}
+var POS_K = ['x', 'y', 'wcm', 'rot', 'orig', 'des', 'src', 'nome', 'tipo'];
+function mqGuardarPos() { if (MQ.ref && MQ.posOrc) { var L = MQ.L.F, p = {}; POS_K.forEach(function (k) { p[k] = L[k]; }); MQ.posOrc[MQ.ref] = p; } }
+function mqPorPos(p) { var L = MQ.L.F; POS_K.forEach(function (k) { if (p[k] !== undefined) L[k] = p[k]; }); }
+// escolhe o logótipo que contrasta com a cor da peça (claro em peças escuras, escuro em peças claras)
+function mqTomLogos() { LOGOS.forEach(function (x) { if (x.tom) return; var im = new Image(); im.onload = function () { x.tom = claroOuEscuro(im); }; im.src = 'data:' + x.tipo + ';base64,' + x.b64; }); }
+function mqLogoParaCor(cor) {
+  if (!LOGOS || LOGOS.length < 2 || !cor) return -1;
+  var h = corHex(cor).replace('#', ''), r = parseInt(h.substr(0, 2), 16), g = parseInt(h.substr(2, 2), 16), b = parseInt(h.substr(4, 2), 16);
+  var quer = (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? 'escuro' : 'claro';
+  for (var i = 0; i < LOGOS.length; i++) if (LOGOS[i].tom === quer) return i;
+  return -1;
+}
+function mqArtigoOrc(i, primeira) {
+  var l = MQ.orcLinhas[i]; if (!l) return;
+  if (!primeira && $('ppT')) propGuardarCampos();
+  mqGuardarPos();
+  MQ.orcI = i; MQ.modo = 'foto'; MQ.lab = l.produto; MQ.ref = l.ref; MQ.peca = null; MQ.corOrc = l.cor; MQ.tecOrc = l.pers;
+  var p = MQ.posOrc[l.ref];
+  if (p) mqPorPos(p);
+  else { var li = mqLogoParaCor(l.cor); if (li >= 0 && LOGOS[li].nome !== MQ.L.F.nome) { MQ.lado = 'F'; mqUsarLogo(li); return; } }
   irMaquete();
+}
+function mqOrcCartao() {
+  if (!MQ.orcLinhas || !MQ.orcLinhas.length || MQ.modo !== 'foto') return '';
+  return '<div class="card"><div class="row"><b class="sp">Artigos do orçamento ' + esc(MQ.orc || '') + '</b><span class="mut">' + MQ.orcLinhas.length + '</span></div>' +
+    '<div class="chips">' + MQ.orcLinhas.map(function (l, i) {
+      return '<button class="chip' + (i === MQ.orcI ? ' on' : '') + '" onclick="mqArtigoOrc(' + i + ')">' + esc(propNomes(l.produto, l.ref).t) + (l.cor ? ' · ' + esc(l.cor) : '') + (MQ.posOrc[l.ref] || i === MQ.orcI ? ' ✓' : '') + '</button>';
+    }).join('') + '</div><div class="mut">Toca em cada artigo e acerta a posição do logótipo. Depois envia tudo de uma vez — uma página por artigo, sem quantidades nem preços.</div>' +
+    (MQ.orcLinhas.length > 1 ? '<div class="acts"><button class="btn wa" onclick="mqTodasWhats()">Enviar as ' + MQ.orcLinhas.length + ' propostas</button><button class="btn sec" onclick="mqTodasGuardar()">⬇ Descarregar as ' + MQ.orcLinhas.length + '</button></div><div id="mqTodasZona"></div>' : '') + '</div>';
+}
+// gera a proposta de cada artigo (com a posição acertada para cada um) e devolve os ficheiros
+function mqTodas(cb) {
+  if (!temDesenho()) { msg('Põe primeiro o logótipo do cliente.', true); return; }
+  if ($('ppT')) propGuardarCampos();
+  mqGuardarPos();
+  var antes = { i: MQ.orcI, peca: MQ.peca }, fs = [], i = 0, L = MQ.L.F, guard = {}; POS_K.forEach(function (k) { guard[k] = L[k]; });
+  aPreparar('mqTodasZona', 'A preparar as propostas… 0 de ' + MQ.orcLinhas.length);
+  var prox = function () {
+    if (i >= MQ.orcLinhas.length) {
+      var l0 = MQ.orcLinhas[antes.i]; MQ.orcI = antes.i; MQ.lab = l0.produto; MQ.ref = l0.ref; MQ.corOrc = l0.cor; MQ.tecOrc = l0.pers; MQ.peca = antes.peca;
+      mqPorPos(guard); mqDesenhar(); cb(fs); return;
+    }
+    var l = MQ.orcLinhas[i];
+    MQ.lab = l.produto; MQ.ref = l.ref; MQ.corOrc = l.cor; MQ.tecOrc = l.pers; MQ.orcI = i;
+    var p = MQ.posOrc[l.ref]; mqPorPos(p || guard);
+    var gerar = function (im) {
+      MQ.peca = im;
+      propGerar(function (c) { c.toBlob(function (b) { fs.push(new File([b], mqNome(), { type: 'image/png' })); i++; aPreparar('mqTodasZona', 'A preparar as propostas… ' + i + ' de ' + MQ.orcLinhas.length); prox(); }, 'image/png'); });
+    };
+    var usa = function (r) { if (!r || !r.b64) { gerar(null); return; } var im = new Image(); im.onload = function () { gerar(im); }; im.onerror = function () { gerar(null); }; im.src = 'data:' + r.tipo + ';base64,' + r.b64; };
+    call('apiFotoHD', l.ref).then(function (r) { if (r && r.b64) usa(r); else call('apiFoto', l.ref).then(usa, function () { usa(null); }); }, function () { call('apiFoto', l.ref).then(usa, function () { usa(null); }); });
+  };
+  prox();
+}
+function mqTodasWhats() {
+  mqTodas(function (fs) {
+    var c = mqCliente(), txt = 'Bom dia' + (c ? ' ' + c : '') + ', seguem as nossas propostas de personalização para os artigos que falámos. Qualquer dúvida, estamos ao dispor. INOVASTAMP';
+    var pode = false; try { pode = navigator.canShare && navigator.canShare({ files: fs }); } catch (e) {}
+    if (!pode) { $('mqTodasZona').innerHTML = '<div class="card mut">Este navegador não partilha várias imagens — usa "Descarregar" e envia a partir da galeria.</div>'; return; }
+    var dados = { files: fs, text: txt, title: 'Propostas INOVASTAMP' };
+    window._PART = function () { navigator.share(dados).then(function () { $('mqTodasZona').innerHTML = ''; }).catch(function () {}); };
+    $('mqTodasZona').innerHTML = '<div class="card partilha"><div class="mut" style="margin-bottom:8px">' + fs.length + ' propostas prontas. Toca para escolher o WhatsApp e o contacto.</div>' +
+      '<button class="btn wa" style="width:100%;font-size:17px;padding:14px" onclick="_PART()">Partilhar</button></div>';
+  });
+}
+function mqTodasGuardar() {
+  mqTodas(function (fs) {
+    $('mqTodasZona').innerHTML = '';
+    fs.forEach(function (f, k) { setTimeout(function () { var u = URL.createObjectURL(f), a = document.createElement('a'); a.href = u; a.download = f.name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(u); }, 60000); }, k * 700); });
+  });
 }
 
 // ---------------- encomendas ao fornecedor ----------------
@@ -1319,8 +1401,11 @@ function propDados() {   // dados da proposta (guardados por artigo neste telem�
   var nm = ref ? propNomes(MQ.lab, ref) : { t: (TPLS.filter(function (t) { return t[0] === MQ.tpl; })[0] || ['', 'Peça'])[1], s: '' };
   var cores = ref ? coresDe(ref).map(function (c) { return c[0]; }) : [];
   var tams = ref && TAMS ? tamanhosDe(ref) : [];
-  return { chave: chave, titulo: g.titulo || nm.t, sub: g.sub !== undefined ? g.sub : nm.s, feats: g.feats || '', tec: g.tec || 'estampado',
-           cores: g.cores || cores.slice(0, 8), coresTodas: cores, tams: g.tams || (tams.length ? tams.join(' ') : ''), nota: g.nota || '' };
+  var tecO = /dtf/i.test(MQ.tecOrc || '') ? 'estampado em DTF' : (/seri/i.test(MQ.tecOrc || '') ? 'em serigrafia' : '');
+  var corO = MQ.corOrc ? cores.filter(function (c) { var a = norm(c), b = norm(MQ.corOrc); return a && b && (a === b || b.indexOf(a) === 0 || a.indexOf(b) === 0); })[0] : null;
+  var corDef = corO ? [corO].concat(cores.filter(function (c) { return c !== corO; })).slice(0, 8) : cores.slice(0, 8);
+  return { chave: chave, titulo: g.titulo || nm.t, sub: g.sub !== undefined ? g.sub : nm.s, feats: g.feats || '', tec: g.tec || tecO || 'estampado',
+           cores: g.cores || corDef, coresTodas: cores, tams: g.tams || (tams.length ? tams.join(' ') : ''), nota: g.nota || '' };
 }
 function propGuardarCampos() {
   var d = propDados(), o = { titulo: $('ppT').value, sub: $('ppS').value, feats: $('ppF').value, tec: $('ppTec').value, tams: $('ppTam').value, nota: $('ppN').value,
