@@ -321,7 +321,7 @@ function orcRecursos(o) {
   var refs = []; o.linhas.forEach(function (l) { if (l.ref && refs.indexOf(l.ref) < 0) refs.push(l.ref); });
   var fotos = {};
   var pF = refs.reduce(function (p, ref) {   // uma a uma (o servidor responde melhor assim)
-    return p.then(function () { return fotoHD(ref).then(function (r) { return r && r.b64 ? r : semFalha(call('apiFoto', ref)); }).then(imgDeR).then(function (im) { fotos[ref] = im; }); });
+    return p.then(function () { return fotoHD(ref).then(function (r) { return r && r.b64 ? r : semFalha(call('apiFoto', ref)).then(function (r2) { return r2 && r2.b64 ? r2 : semFalha(call('apiFoto', ref)); }); }).then(imgDeR).then(function (im) { fotos[ref] = im; if (!im) orcRecursos.faltou = (orcRecursos.faltou || 0) + 1; }); });
   }, Promise.resolve());
   var pL = semFalha(call('apiLogos', o.cliente, o.nif || '')).then(function (l) {
     l = l || []; return Promise.all(l.map(function (x) { return imgDeR(x); })).then(function (ims) {
@@ -476,9 +476,9 @@ function canvasJpeg(c) { return new Promise(function (ok) { c.toBlob(function (b
 function b64DeBytes(u) { var s = '', k = 0x8000; for (var i = 0; i < u.length; i += k) s += String.fromCharCode.apply(null, u.subarray(i, i + k)); return btoa(s); }
 // gera o PDF novo de um orçamento e guarda-o no Drive (substitui o antigo)
 function orcPdfNovo(num, dados) {
-  var pO = dados ? Promise.resolve(dados) : call('apiAbrir', num);
+  orcRecursos.faltou = 0; var pO = dados ? Promise.resolve(dados) : call('apiAbrir', num);
   return pO.then(function (o) { return orcRecursos(o).then(function (R) { return Promise.all(orcDesenhar(o, R).map(canvasJpeg)); }); })
-    .then(function (pgs) { return call('apiPdfGuardar', num, b64DeBytes(pdfDeJpegs(pgs))); });
+    .then(function (pgs) { var f = orcRecursos.faltou || 0; orcRecursos.faltou = 0; return call('apiPdfGuardar', num, b64DeBytes(pdfDeJpegs(pgs))).then(function (r) { r = r || {}; r.faltouFoto = f; return r; }); });
 }
 // refaz todos os PDFs já criados (um a um)
 function orcRefazerTodos(cb) {
