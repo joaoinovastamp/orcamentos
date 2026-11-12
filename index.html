@@ -1212,6 +1212,7 @@ function maqueteDoOrc() {
     .map(function (l) { return { produto: l.produto, ref: l.ref, cor: l.cor || '', pers: [l.pers1, l.pers2].filter(Boolean).join(' + ') }; });
   MQ.posOrc = {}; MQ.orcI = -1; MQ.logoBase = null; MQ.L.F.orig = null; MQ.L.F.des = null; MQ.L.F.src = null;
   PROP.formato = 'proposta';
+  if (!TAMS) call('apiTamanhos').then(function (t) { TAMS = t; if ($('mqCv')) irMaquete(); });
   var i0 = 0; MQ.orcLinhas.some(function (l, i) { if (l.pers) { i0 = i; return true; } });
   if (MQ.orcLinhas.length) mqArtigoOrc(i0, true); else irMaquete();
   // põe logo o logótipo do cliente (o 1.º guardado), se ainda não houver desenho
@@ -1391,10 +1392,17 @@ function corHex(nome) { var n = norm(nome); for (var i = 0; i < COR_HEX.length; 
 function propNomes(lab, ref) {   // título grande + subtítulo a partir do nome do produto
   var d = String(lab || ''), i = d.indexOf(' — '); if (i >= 0) d = d.substring(i + 3);
   d = d.split(' · ')[0].replace(/\s*\(.*$/, '').trim();
+  var j = d.indexOf(' — '); if (j > 0) return { t: d.substring(0, j).trim(), s: d.substring(j + 3).trim() };   // "RICHMOND — Softshell unissexo"
+  var mod = d.split(/\s+/).filter(function (w) { return /^[A-ZÀ-Ý0-9-]{3,}$/.test(w) && /[A-Z]/.test(w); });
+  if (mod.length && mod.join(' ') !== d) return { t: mod.join(' '), s: d.replace(mod.join(' '), '').replace(/\s+/g, ' ').trim() };
   var b = base(ref);
   if (/^TH-/.test(b)) { var nm = b.substring(3).toLowerCase().replace(/-/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
     var k = norm(d).lastIndexOf(norm(nm.split(' ')[0])); return { t: nm, s: k > 0 ? d.substring(0, k).trim() : d }; }
   var w = d.split(/\s+/); if (w.length < 2) return { t: d, s: '' };
+  if (!/^[A-Z]/.test(w[w.length - 1]) && w.length >= 3) {   // "Calças 4-Xtreme multibolsos" → 4-XTREME · Calças multibolsos
+    for (var q = 1; q < w.length; q++) if (/^[A-Z0-9]/.test(w[q])) return { t: w[q], s: w.filter(function (_, z) { return z !== q; }).join(' ') };
+    return { t: d, s: '' };
+  }
   var n = /^(woman|women|kids|man|mujer|niño|nino)$/i.test(w[w.length - 1]) && w.length > 2 ? 2 : 1;
   return { t: w.slice(-n).join(' '), s: w.slice(0, -n).join(' ') };
 }
@@ -1455,7 +1463,7 @@ function propPosicao(l) {
 function propGerar(cb) {
   var d = propDados(), cli = (mqCliente() || 'Cliente').toUpperCase(), logoC = logoCliente();
   var tec = d.tec, lados = (MQ.modo === 'foto' ? ['F'] : ['F', 'C']).filter(function (l) { return MQ.L[l].des; });
-  var pers = lados.length ? 'Logótipo ' + cli + ' ' + lados.map(propPosicao).join(' e ') + ' · ' + tec : 'Pronto a personalizar com o logótipo ' + cli + ' · serigrafia ou DTF, no tamanho e posição que preferir';
+  var pers = lados.length ? 'Logótipo ' + cli + ' ' + lados.map(propPosicao).join(' e ') + ' · ' + tec : (MQ.orcLinhas && MQ.orcI >= 0 && !MQ.tecOrc ? 'Artigo sem personalização · completa o fardamento da equipa ' + cli : 'Pronto a personalizar com o logótipo ' + cli + ' · serigrafia ou DTF, no tamanho e posição que preferir');
   // maquete em alta resolução
   var t = mqTamanhoCv(), W0 = t.W, H0 = t.H, k = 1400 / W0, off = document.createElement('canvas'); off.width = Math.round(W0 * k); off.height = Math.round(H0 * k);
   var ox = off.getContext('2d'); ox.setTransform(k, 0, 0, k, 0, 0);
@@ -1539,7 +1547,7 @@ function propGerar(cb) {
     x.font = '700 22px ' + F; var pl = linhas(x, pers, cw - 120).slice(0, 2), ph2 = 52 + pl.length * 28;
     rr(x, X, y, cw, ph2, 22); x.fillStyle = 'rgba(194,38,143,.14)'; x.fill(); x.strokeStyle = 'rgba(194,38,143,.9)'; x.lineWidth = 2.5; x.stroke();
     x.fillStyle = '#C2268F'; x.beginPath(); x.arc(X + 48, y + ph2 / 2, 26, 0, 7); x.fill(); x.strokeStyle = '#fff'; x.lineWidth = 5; x.lineCap = 'round'; x.beginPath(); x.moveTo(X + 37, y + ph2 / 2 + 1); x.lineTo(X + 45, y + ph2 / 2 + 9); x.lineTo(X + 60, y + ph2 / 2 - 8); x.stroke();
-    x.fillStyle = '#f3b6dc'; x.font = '500 14px ' + F; esp(x, '3px'); x.fillText('PERSONALIZAÇÃO', X + 96, y + 32); esp(x, '0px');
+    x.fillStyle = '#f3b6dc'; x.font = '500 14px ' + F; esp(x, '3px'); x.fillText(lados.length || !(MQ.orcLinhas && MQ.orcI >= 0 && !MQ.tecOrc) ? 'PERSONALIZAÇÃO' : 'FARDAMENTO', X + 96, y + 32); esp(x, '0px');
     x.fillStyle = '#fff'; x.font = '700 22px ' + F; pl.forEach(function (s, i) { x.fillText(s, X + 96, y + 62 + i * 28); });
     y += ph2 + 7 * mm;
     // cores e tamanhos
