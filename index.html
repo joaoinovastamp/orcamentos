@@ -292,6 +292,23 @@ function enviar(num, email) {
   call('apiEnviar', num, e).then(function (r) { msg('Enviado para ' + r.email); LISTA = []; abrir(num); });
 }
 
+
+// ---------------- Partilha (folha de partilha do telemóvel: escolhe-se a app e o contacto) ----------------
+// Tenta abrir a partilha logo; se o telemóvel exigir novo toque (a preparação demorou), mostra UM botão grande.
+function podePartilhar(f) { try { return !!(navigator.canShare && navigator.canShare({ files: [f] })); } catch (e) { return false; } }
+function partilharFicheiro(f, texto, titulo, zona, depois, alternativa) {
+  var ok = function () { if ($(zona)) $(zona).innerHTML = ''; if (depois) depois(); };
+  if (!podePartilhar(f)) { if (alternativa) alternativa(); else msg('Este navegador não abre a partilha de ficheiros — usa o telemóvel.', true); return; }
+  var dados = { files: [f], text: texto, title: titulo };
+  var botao = function () {
+    window._PART = function () { navigator.share(dados).then(ok).catch(function () {}); };
+    $(zona).innerHTML = '<div class="card partilha"><div class="mut" style="margin-bottom:8px">Pronto. Toca para escolher o WhatsApp e o contacto.</div>' +
+      '<button class="btn wa" style="width:100%;font-size:17px;padding:14px" onclick="_PART()">Partilhar</button></div>';
+  };
+  try { navigator.share(dados).then(ok).catch(function (e) { if (e && e.name === 'NotAllowedError') botao(); }); } catch (e) { botao(); }
+}
+function aPreparar(zona, t) { if ($(zona)) $(zona).innerHTML = '<div class="card mut" style="text-align:center">' + (t || 'A preparar…') + '</div>'; }
+
 // ---------------- WhatsApp ----------------
 // 1.º toque: prepara o PDF; 2.º toque: partilha (o telemóvel exige um toque para abrir a partilha)
 var WA = null;
@@ -306,32 +323,25 @@ function textoWa(r) {
     'Para aceitar, basta carregar aqui: ' + r.aceitar + '\nQualquer dúvida, estamos ao dispor.';
 }
 function whatsapp(num) {
+  aPreparar('waZona', 'A preparar o PDF…');
   call('apiPartilha', num, false).then(function (r) {
     var bin = atob(r.b64), a = new Uint8Array(bin.length);
     for (var i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
     WA = { r: r, file: null };
     try { WA.file = new File([a], r.nome, { type: 'application/pdf' }); } catch (e) {}
-    var podeFicheiro = WA.file && navigator.canShare && navigator.canShare({ files: [WA.file] });
-    $('waZona').innerHTML = '<div class="card">' +
-      (podeFicheiro ? '<button class="btn wa" style="width:100%" onclick="waPartilhar()">Partilhar o PDF (escolhe WhatsApp)</button>' +
-        '<div class="mut" style="margin-top:6px">Vai o PDF e a mensagem com o link para aceitar.</div>' : '') +
-      '<button class="btn ' + (podeFicheiro ? 'sec' : 'wa') + '" style="width:100%;margin-top:8px" onclick="waLink()">Enviar link do PDF no WhatsApp' + (r.tel ? ' (' + esc(r.tel) + ')' : '') + '</button>' +
-      '<div class="mut" style="margin-top:6px">O link deixa o PDF visível a quem o tiver.</div></div>';
+    partilharFicheiro(WA.file, textoWa(r), 'Orçamento ' + r.num, 'waZona', function () { marcarEnviado(r.num); }, waLink);
   });
 }
-function waPartilhar() {
-  if (!WA) return;
-  navigator.share({ files: [WA.file], text: textoWa(WA.r), title: 'Orçamento ' + WA.r.num })
-    .then(function () { marcarEnviado(WA.r.num); }).catch(function () {});
-}
+// computador (sem partilha de ficheiros): abre o WhatsApp com a mensagem e o link do PDF; escolhe-se lá o contacto
 function waLink() {
   if (!WA) return;
   call('apiPartilha', WA.r.num, true).then(function (r) {
-    var url = 'https://wa.me/' + telWa(r.tel) + '?text=' + encodeURIComponent(textoWa(r) + '\nPDF: ' + r.pdfUrl);
+    var url = 'https://wa.me/?text=' + encodeURIComponent(textoWa(r) + '\nPDF: ' + r.pdfUrl);
     $('waZona').innerHTML = '<div class="card"><a class="btn wa" style="display:block;text-align:center;text-decoration:none" href="' + esc(url) +
       '" target="_blank" onclick="setTimeout(function(){marcarEnviado(\'' + esc(r.num) + '\')},800)">Abrir o WhatsApp</a></div>';
   });
 }
+function waPartilhar() { if (WA && WA.file) partilharFicheiro(WA.file, textoWa(WA.r), 'Orçamento ' + WA.r.num, 'waZona', function () { marcarEnviado(WA.r.num); }, waLink); }
 function marcarEnviado(num) {
   if (!ATUAL || ATUAL.num !== num || (ATUAL.estado && ATUAL.estado !== 'Rascunho')) return;
   if (!confirm('Marcar o orçamento ' + num + ' como Enviado?')) return;
@@ -759,7 +769,7 @@ function irMaquete() {
       : '<button class="btn sec" onclick="mqPos(0.5,0.40,30)">Costas</button><button class="btn sec" onclick="mqPos(0.5,0.27,22)">Nuca / ombros</button>') +
     '<button class="btn sec" onclick="mqPos(0.5,0.5)">Centro</button></div>' +
     '<div class="acts"><button class="btn sec" onclick="mqGuardar()">⬇ Descarregar foto</button></div>' +
-    '<div class="acts"><button class="btn" onclick="mqEmail()">✉ Enviar por email</button><button class="btn wa" onclick="mqWhats()">Enviar por WhatsApp</button></div><div id="mqZona"></div></div>';
+    '<div class="acts"><button class="btn" onclick="mqEmail()">✉ Enviar por email</button><button class="btn wa" onclick="mqWhats()">WhatsApp</button></div><div id="mqZona"></div></div>';
   h += propCartao();
   h += '<h2>Custo do DTF' + (foto ? '' : ' (' + (MQ.lado === 'F' ? 'frente' : 'costas') + ')') + '</h2><div id="dtfZona"></div>';
   $('main').innerHTML = h;
@@ -973,23 +983,21 @@ function mqEmail() {
   var cli = prompt('Nome do cliente (para o "Bom dia …", opcional):', mqCliente()); if (cli === null) return;
   mqB64(function (b64) { call('apiMaqueteEmail', e.trim(), b64, mqNome(), cli.trim()).then(function (r) { msg('Maquete enviada para ' + r.email); }); });
 }
+function mqTextoWa() { var c = mqCliente(); return 'Bom dia' + (c ? ' ' + c : '') + ', segue a nossa proposta de personalização. Qualquer dúvida, estamos ao dispor. INOVASTAMP'; }
 function mqWhats() {
   if (!temDesenho()) { msg('Carrega primeiro o desenho do cliente.', true); return; }
+  aPreparar('mqZona', 'A preparar a imagem…');
   mqBlob(function (b) {
     var f = new File([b], mqNome(), { type: 'image/png' });
-    var pode = false; try { pode = navigator.canShare && navigator.canShare({ files: [f] }); } catch (x) {}
-    var tel = (MQ.cli && MQ.cli.tel) || (ED && ED.tel) || '';
-    $('mqZona').innerHTML = '<div class="card">' + (pode ? '<button class="btn wa" style="width:100%" onclick="mqPartilhar()">Partilhar a imagem (escolhe WhatsApp)</button>' : '') +
-      '<label>Telemóvel do cliente</label><input id="mqTel" inputmode="tel" value="' + esc(tel) + '" placeholder="9xx xxx xxx">' +
-      '<button class="btn ' + (pode ? 'sec' : 'wa') + '" style="width:100%;margin-top:8px" onclick="mqWhatsLink()">Enviar link da imagem no WhatsApp</button>' +
-      '<div class="mut" style="margin-top:6px">O link deixa a imagem visível a quem o tiver (fica no Drive em "INOVASTAMP - Maquetes").</div></div>';
+    partilharFicheiro(f, mqTextoWa(), mqNome(), 'mqZona', null, mqWhatsLink);
   });
 }
+// computador (sem partilha de ficheiros): link da imagem; o contacto escolhe-se no WhatsApp
 function mqWhatsLink() {
-  var tel = $('mqTel').value;
+  aPreparar('mqZona', 'A criar o link…');
   mqB64(function (b64) {
     call('apiMaqueteLink', b64, mqNome()).then(function (r) {
-      var url = 'https://wa.me/' + telWa(tel) + '?text=' + encodeURIComponent('Bom dia, segue a simulação da personalização (INOVASTAMP): ' + r.url + '\nCores e proporções aproximadas.');
+      var url = 'https://wa.me/?text=' + encodeURIComponent(mqTextoWa() + '\n' + r.url);
       $('mqZona').innerHTML = '<div class="card"><a class="btn wa" style="display:block;text-align:center;text-decoration:none" target="_blank" href="' + esc(url) + '">Abrir o WhatsApp</a></div>';
     });
   });
