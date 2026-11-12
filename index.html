@@ -1232,9 +1232,13 @@ function desenharEnc() {
   }).join('') : '<div class="vazio">Ainda sem artigos.</div>');
   h += '<button class="btn sec" style="width:100%" onclick="encAdicionar()">＋ Adicionar artigo</button>';
   if (EN.total) h += '<div class="card" style="margin-top:10px"><div class="tot big"><span>Total s/ IVA (última gravação)</span><span class="num">' + eur(EN.total) + '</span></div></div>';
-  var fe = fornecedores().filter(function (f) { return f.nome === EN.forn; })[0], semEmail = fe && fe.email === false;
-  h += '<div class="acts"><button class="btn sec" onclick="encGuardar(false)">Guardar</button><button class="btn ok" onclick="encGuardar(true)"' + (semEmail ? ' disabled' : '') + '>Guardar e enviar à ' + esc(EN.forn) + '</button></div>' +
-    (semEmail ? '<div class="mut">Falta o email das encomendas de ' + esc(EN.forn) + ' (aba Fornecedores da folha). Podes guardar e enviar depois.</div>' : '') +
+  var fe = fornecedores().filter(function (f) { return f.nome === EN.forn; })[0], site = fe && fe.site, semEmail = fe && fe.email === false && !site;
+  if (site) h += '<div class="acts"><button class="btn sec" onclick="encGuardar(false)">Guardar</button><a class="btn" style="text-align:center;text-decoration:none" target="_blank" href="' + esc(site) + '">Abrir a loja online</a></div>' +
+    (EN.num && EN.estado !== 'Enviada' ? '<div class="acts"><button class="btn ok" onclick="encMarcar()">Já encomendei no site</button></div>' : '') +
+    '<div class="mut">A ' + esc(EN.forn) + ' encomenda-se na loja online. Guarda aqui para teres o registo e o PDF com a lista; depois de pedires no site, carrega em "Já encomendei no site".</div>';
+  else h += '<div class="acts"><button class="btn sec" onclick="encGuardar(false)">Guardar</button><button class="btn ok" onclick="encGuardar(true)"' + (semEmail ? ' disabled' : '') + '>Guardar e enviar à ' + esc(EN.forn) + '</button></div>' +
+    (semEmail ? '<div class="mut">Falta o email das encomendas de ' + esc(EN.forn) + ' (aba Fornecedores da folha). Podes guardar e enviar depois.</div>' : '');
+  h +=
     (EN.num && EN.pdf ? '<div class="acts"><button class="btn sec" onclick="encPdf(\'' + esc(EN.num) + '\')">Abrir PDF</button></div>' : '') +
     '<div class="acts"><button class="btn lite" onclick="irEncomendas()">← Lista de encomendas</button></div>';
   $('main').innerHTML = h;
@@ -1251,6 +1255,10 @@ function encGuardar(enviar) {
   if (!enviar && EN.estado === 'Enviada' && !confirm('Esta encomenda já foi enviada ao fornecedor. Guardar as alterações por cima?')) return;
   call('apiEncGuardar', { num: EN.num, forn: EN.forn, obs: EN.obs, data: EN.data, linhas: ls.map(function (l) { return { produto: l.produto, cor: l.cor, tam: l.tam, qtd: Number(l.qtd), nota: l.nota || '' }; }) }, !!enviar)
     .then(function (r) { msg('Encomenda ' + r.num + ' guardada (' + r.linhas + ' linhas, ' + eur(r.total) + ' s/IVA)' + (r.enviada ? '\nEnviada para ' + r.email : '')); abrirEnc(r.num); });
+}
+function encMarcar() {
+  if (!confirm('Marcar a encomenda ' + EN.num + ' como feita no site (Enviada, hoje)?')) return;
+  call('apiEncMarcarEnviada', EN.num).then(function () { msg('Encomenda ' + EN.num + ' marcada como Enviada.'); abrirEnc(EN.num); });
 }
 function encPdf(num) {
   call('apiEncPdf', num).then(function (r) {
