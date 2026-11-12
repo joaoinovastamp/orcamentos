@@ -8,6 +8,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2714%27 fill=%27%231F3864%27/%3E%3Ctext x=%2732%27 y=%2743%27 font-size=%2730%27 text-anchor=%27middle%27 fill=%27white%27 font-family=%27Arial%27 font-weight=%27bold%27%3EOR%3C/text%3E%3C/svg%3E">
 <title>INOVASTAMP Orçamentos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800;900&display=swap" rel="stylesheet">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <style>
@@ -759,6 +760,7 @@ function irMaquete() {
     '<button class="btn sec" onclick="mqPos(0.5,0.5)">Centro</button></div>' +
     '<div class="acts"><button class="btn sec" onclick="mqGuardar()">⬇ Descarregar foto</button></div>' +
     '<div class="acts"><button class="btn" onclick="mqEmail()">✉ Enviar por email</button><button class="btn wa" onclick="mqWhats()">Enviar por WhatsApp</button></div><div id="mqZona"></div></div>';
+  h += propCartao();
   h += '<h2>Custo do DTF' + (foto ? '' : ' (' + (MQ.lado === 'F' ? 'frente' : 'costas') + ')') + '</h2><div id="dtfZona"></div>';
   $('main').innerHTML = h;
   mqDesenhar(); desenharDtf();
@@ -892,8 +894,14 @@ function desenharLado(x, L, a) {
 }
 function mqDesenhar(exportar) {
   var t = mqTamanhoCv(); if (!t) return;
-  var x = t.cv.getContext('2d'), W = t.W, H = t.H;
-  x.setTransform(t.r, 0, 0, t.r, 0, 0); x.fillStyle = '#fff'; x.fillRect(0, 0, W, H);
+  var x = t.cv.getContext('2d');
+  x.setTransform(t.r, 0, 0, t.r, 0, 0);
+  mqDesenharEm(x, t.W, t.H, exportar);
+  mqEventos(t.cv);
+}
+// desenha a maquete num contexto qualquer (ecrã ou imagem em alta resolução para a proposta)
+function mqDesenharEm(x, W, H, exportar, semFundo) {
+  if (semFundo) x.clearRect(0, 0, W, H); else { x.fillStyle = '#fff'; x.fillRect(0, 0, W, H); }
   MQ._areas = {};
   if (MQ.modo === 'foto') {
     if (MQ.peca) { var k = Math.min(W / MQ.peca.width, H / MQ.peca.height); x.drawImage(MQ.peca, (W - MQ.peca.width * k) / 2, (H - MQ.peca.height * k) / 2, MQ.peca.width * k, MQ.peca.height * k); }
@@ -914,7 +922,6 @@ function mqDesenhar(exportar) {
     x.fillStyle = 'rgba(31,56,100,.9)'; x.fillRect(0, H - 26, W, 26); x.fillStyle = '#fff'; x.font = '12px sans-serif'; x.textAlign = 'left';
     x.fillText('INOVASTAMP · simulação' + (txt ? ' · ' + txt : '') + ' · cores e proporções aproximadas', 8, H - 9);
   }
-  mqEventos(t.cv);
 }
 function fmtCm(v) { return String(Math.round(v * 10) / 10).replace('.', ','); }
 function dtfAltura() { var L = ladoAtual(); return L.des ? L.wcm * L.des.height / L.des.width : DTF.h; }
@@ -946,8 +953,14 @@ function mqEventos(cv) {
   cv.addEventListener('pointerup', fim); cv.addEventListener('pointercancel', fim);
 }
 function temDesenho() { return !!(MQ.L.F.des || (MQ.modo !== 'foto' && MQ.L.C.des)); }
-function mqBlob(cb) { mqDesenhar(true); $('mqCv').toBlob(function (b) { mqDesenhar(); cb(b); }, 'image/png'); }
-function mqNome() { return 'Maquete ' + (MQ.modo === 'foto' ? (MQ.ref || 'INOVASTAMP') : (TPLS.filter(function (t) { return t[0] === MQ.tpl; })[0] || ['', 'peça'])[1]) + '.png'; }
+function mqBlob(cb) {
+  if (PROP.formato === 'proposta') {
+    propGuardarCampos2(); propGerar(function (c) { c.toBlob(function (b) { cb(b); }, 'image/png'); }); return;
+  }
+  mqDesenhar(true); $('mqCv').toBlob(function (b) { mqDesenhar(); cb(b); }, 'image/png');
+}
+function propGuardarCampos2() { if ($('ppT')) propGuardarCampos(); }
+function mqNome() { if (PROP.formato === 'proposta') return 'Proposta ' + (mqCliente() || 'INOVASTAMP') + ' - ' + propDados().titulo + '.png'; return 'Maquete ' + (MQ.modo === 'foto' ? (MQ.ref || 'INOVASTAMP') : (TPLS.filter(function (t) { return t[0] === MQ.tpl; })[0] || ['', 'peça'])[1]) + '.png'; }
 function mqGuardar() {
   mqBlob(function (b) { var u = URL.createObjectURL(b), l = document.createElement('a'); l.href = u; l.download = mqNome(); document.body.appendChild(l); l.click(); l.remove(); setTimeout(function () { URL.revokeObjectURL(u); }, 60000); });
 }
@@ -1266,6 +1279,193 @@ function encPdf(num) {
     var url = URL.createObjectURL(new Blob([a], { type: 'application/pdf' })), l = document.createElement('a');
     l.href = url; l.download = r.nome; l.target = '_blank'; document.body.appendChild(l); l.click(); l.remove(); setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
   });
+}
+
+
+// ---------------- v34: proposta em modelo de catálogo (é o formato das imagens da Maquete) ----------------
+var LOGO_INO = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOYAAADICAMAAADLEm3PAAABgFBMVEUboF5qW5rTTlziXxu2eiBaaGlnimhdkJQklrGxKp/FMJIod8eOh2Kc17fvk0ySfFdUYsN60KWn28jbotwNk96cpp1nueGlhCTLO3jq6Ni9TMDhqIdWmjvfiTGOUJW1Ksalq9TWx6Y9erPKJcLOYqkAnD93Pbv+/v4ZGRcMqVcJkMzsawW0G7UKCggDi8rw6O+1I7Xscgo3NzW1tbW6N7snJyWmpqXX19fryOvQdtDx1/DLZ8vP6fGvDK/ltuUQqmhYWFav2uxJSUeYmJeP1rHFVsXVh9XbmNsvtG/BScHHx8d3d3X55tQgIB7thTAnms6Hh4bhqeHvl1CxGcK15MxJq9fxp2xoaGaNyuVqutz21LZXwooMmLA0otNqyJjJ6tnb8eryuIgEs1PBFrj1y6fseyW84O9Ystqa0ei+Qb7SdhRAQD5Lm0ZOvYT428Yvo06Rhyoui697wuH1xJoOm5dEu33dot2WOLPUSVltkznysXkQoYeseUPNdSbjZCd2y6YmZ9fhAAAAgHRSTlP//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////xUHpOoAABnsSURBVHja7Z2HQ9tK0sBNT0h7qS/l1bv7PrnIluSCG7bBvdBMb6GFGgKEFNKTf/12Z4t2ZRl4hBiHs+7lsGWV/e3Mzs7OzkoO5X9ic7QwG7H1D76am3s1eLkxB6fcPtjcc5cXc/ApBoQN/R28pJhzjJGCzl5GzP5REdKNvvimNi8dZr9bosTSnJpzu0e3+i8TZi3lU9Q2B1FbHV25RJiyxiJRvoLdWz63b+7yYD61UDIz248w3ZcGc85KyRvkFOIcvCSYgzaUmgY/zSLM2Z8OsxqNFrQTGqbPh/uRuEZNk9u39bNhxhOqqup5C+grizC30b5kkLda39RPhplP6IhSTwQj4t4VuS8hljWeM12jnwwzhkUZRP9UtVBXmBQqmKe/bv90mNGEmte0SFRX9UTe3C0JkxrZSCLJzdPPhhlPECHGcogzyvbO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';
+var PROP = { formato: 'proposta' };
+try { var _pf = localStorage.getItem('inovastamp_formato'); if (_pf) PROP.formato = _pf; } catch (e) {}
+function propFormato(v) { PROP.formato = v; try { localStorage.setItem('inovastamp_formato', v); } catch (e) {} irMaquete(); }
+var COR_HEX = [[/preto|negro|black/, '#161616'], [/branco|blanco|white|cru|natural/, '#f4f4f2'], [/marinho|navy|marino|eclipse/, '#1F2A44'], [/royal|real/, '#2E5DAA'],
+  [/smoky|tropa|militar|kaki|caqui|khaki|oliva/, '#555846'], [/bord[oô]|burdeos|vinho|granate/, '#6d1a2a'], [/vermelh|rojo|red/, '#B3202A'], [/laranja|naranja|orange/, '#E8611A'],
+  [/amarel|amarillo|yellow|lim[aã]o/, '#F2C200'], [/mostarda/, '#d1a520'], [/fu[cs]h?sia|magenta/, '#C2268F'], [/rosa|pink/, '#e58fb0'], [/roxo|lil[aá]s|lavanda|morado|purple/, '#7b4fa0'],
+  [/castanh|chocolate|marr[oó]n|brown/, '#5B3A29'], [/areia|bege|beige|creme|arena|camel/, '#d9c9a8'], [/c[eé]u|celeste|claro|sky/, '#8fc3e8'], [/aqua|turquesa|turquoise/, '#3fb8b0'],
+  [/menta|mint|pastel/, '#bfe3cf'], [/verde|green|bottle/, '#2E7D32'], [/antracite|carv[aã]o|grafite|anthracite|escuro/, '#3b3f45'], [/coral|salm[aã]o/, '#f2735a'],
+  [/cinz|gris|grey|gray|prata|matizado/, '#8a9099'], [/azul|blue/, '#3a6fb5']];
+function corHex(nome) { var n = norm(nome); for (var i = 0; i < COR_HEX.length; i++) if (COR_HEX[i][0].test(n)) return COR_HEX[i][1]; return '#9aa3b5'; }
+function propNomes(lab, ref) {   // título grande + subtítulo a partir do nome do produto
+  var d = String(lab || ''), i = d.indexOf(' — '); if (i >= 0) d = d.substring(i + 3);
+  d = d.split(' · ')[0].replace(/\s*\(.*$/, '').trim();
+  var b = base(ref);
+  if (/^TH-/.test(b)) { var nm = b.substring(3).toLowerCase().replace(/-/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+    var k = norm(d).lastIndexOf(norm(nm.split(' ')[0])); return { t: nm, s: k > 0 ? d.substring(0, k).trim() : d }; }
+  var w = d.split(/\s+/); if (w.length < 2) return { t: d, s: '' };
+  var n = /^(woman|women|kids|man|mujer|niño|nino)$/i.test(w[w.length - 1]) && w.length > 2 ? 2 : 1;
+  return { t: w.slice(-n).join(' '), s: w.slice(0, -n).join(' ') };
+}
+function propDados() {   // dados da proposta (guardados por artigo neste telemóvel)
+  var ref = MQ.modo === 'foto' ? MQ.ref : '', chave = 'inovastamp_prop_' + (base(ref) || MQ.tpl), g = {};
+  try { g = JSON.parse(localStorage.getItem(chave) || '{}'); } catch (e) {}
+  var nm = ref ? propNomes(MQ.lab, ref) : { t: (TPLS.filter(function (t) { return t[0] === MQ.tpl; })[0] || ['', 'Peça'])[1], s: '' };
+  var cores = ref ? coresDe(ref).map(function (c) { return c[0]; }) : [];
+  var tams = ref && TAMS ? tamanhosDe(ref) : [];
+  return { chave: chave, titulo: g.titulo || nm.t, sub: g.sub !== undefined ? g.sub : nm.s, feats: g.feats || '', tec: g.tec || 'estampado',
+           cores: g.cores || cores.slice(0, 8), coresTodas: cores, tams: g.tams || (tams.length ? tams.join(' ') : ''), nota: g.nota || '' };
+}
+function propGuardarCampos() {
+  var d = propDados(), o = { titulo: $('ppT').value, sub: $('ppS').value, feats: $('ppF').value, tec: $('ppTec').value, tams: $('ppTam').value, nota: $('ppN').value,
+    cores: [].slice.call(document.querySelectorAll('.ppCor:checked')).map(function (x) { return x.value; }) };
+  try { localStorage.setItem(d.chave, JSON.stringify(o)); } catch (e) {}
+}
+function propCartao() {
+  var d = propDados();
+  return '<div class="card"><div class="row"><b class="sp">Formato das imagens</b></div><div class="chips"><button class="chip' + (PROP.formato === 'proposta' ? ' on' : '') + '" onclick="propFormato(\'proposta\')">Proposta (catálogo)</button>' +
+    '<button class="chip' + (PROP.formato !== 'proposta' ? ' on' : '') + '" onclick="propFormato(\'simples\')">Só a maquete</button></div>' +
+    (PROP.formato === 'proposta' ? '<div class="mut">Descarregar, email, WhatsApp e "Guardar no orçamento" usam a página de proposta (foto, logótipos, características, cores e tamanhos).</div>' +
+    '<details style="margin-top:6px"><summary>Textos da proposta (ficam guardados para este artigo)</summary>' +
+    '<div class="g2"><div><label>Nome grande</label><input id="ppT" value="' + esc(d.titulo) + '" onchange="propGuardarCampos()"></div><div><label>Descrição curta</label><input id="ppS" value="' + esc(d.sub) + '" onchange="propGuardarCampos()"></div></div>' +
+    '<label>Características (uma por linha)</label><textarea id="ppF" rows="4" placeholder="ex.: Gola alta e capuz removível" onchange="propGuardarCampos()">' + esc(d.feats) + '</textarea>' +
+    '<div class="g2"><div><label>Técnica</label><select id="ppTec" onchange="propGuardarCampos()">' + opts([['estampado', 'Estampado'], ['estampado em DTF', 'DTF'], ['em serigrafia', 'Serigrafia']], d.tec) + '</select></div>' +
+    '<div><label>Tamanhos</label><input id="ppTam" value="' + esc(d.tams) + '" placeholder="XS S M L XL 2XL" onchange="propGuardarCampos()"></div></div>' +
+    (d.coresTodas.length ? '<label>Cores na proposta</label><div style="display:flex;flex-wrap:wrap;gap:4px 12px">' + d.coresTodas.map(function (c) {
+      return '<label style="display:flex;gap:5px;align-items:center;margin:0;color:var(--txt);font-size:13px"><input type="checkbox" class="ppCor" style="width:auto" value="' + esc(c) + '"' + (d.cores.indexOf(c) >= 0 ? ' checked' : '') + ' onchange="propGuardarCampos()"><i style="width:12px;height:12px;border-radius:50%;background:' + corHex(c) + ';border:1px solid #b9c0cc"></i>' + esc(c) + '</label>';
+    }).join('') + '</div>' : '') +
+    '<label>Nota na foto</label><input id="ppN" value="' + esc(d.nota) + '" placeholder="Imagem ilustrativa · cor da foto: …" onchange="propGuardarCampos()">' +
+    '<div class="acts"><button class="btn sec" onclick="propVer()">Ver a proposta</button></div></details><div id="ppPrev"></div>' : '') + '</div>';
+}
+// ---- desenho ----
+function imgDe(src) { return new Promise(function (ok) { var i = new Image(); i.onload = function () { ok(i); }; i.onerror = function () { ok(null); }; i.src = src; }); }
+function rr(x, X, Y, W, H, r) { x.beginPath(); x.moveTo(X + r, Y); x.arcTo(X + W, Y, X + W, Y + H, r); x.arcTo(X + W, Y + H, X, Y + H, r); x.arcTo(X, Y + H, X, Y, r); x.arcTo(X, Y, X + W, Y, r); x.closePath(); }
+function cobrir(x, img, sx, sy, sw, sh, X, Y, W, H, px, py) {   // "object-fit: cover" de uma zona da imagem
+  var k = Math.max(W / sw, H / sh), cw = W / k, ch = H / k, ox = sx + (sw - cw) * (px === undefined ? 0.5 : px), oy = sy + (sh - ch) * (py === undefined ? 0.5 : py);
+  ox = Math.max(sx, Math.min(ox, sx + sw - cw)); oy = Math.max(sy, Math.min(oy, sy + sh - ch));
+  x.drawImage(img, ox, oy, cw, ch, X, Y, W, H);
+}
+function linhas(x, txt, maxW) { var w = String(txt).split(/\s+/), out = [], l = ''; w.forEach(function (p) { var t = l ? l + ' ' + p : p; if (x.measureText(t).width > maxW && l) { out.push(l); l = p; } else l = t; }); if (l) out.push(l); return out; }
+function esp(x, v) { try { x.letterSpacing = v; } catch (e) {} }
+function claroOuEscuro(img) {   // o logótipo é claro (branco)? → cartão escuro
+  try { var c = document.createElement('canvas'); c.width = 60; c.height = 60; var y = c.getContext('2d'); y.drawImage(img, 0, 0, 60, 60);
+    var d = y.getImageData(0, 0, 60, 60).data, s = 0, n = 0; for (var i = 0; i < d.length; i += 4) if (d[i + 3] > 128) { s += d[i] + d[i + 1] + d[i + 2]; n++; }
+    return n && s / n > 600 ? 'claro' : 'escuro'; } catch (e) { return 'escuro'; }
+}
+function logoCliente() { var L = MQ.L.F.orig ? MQ.L.F : MQ.L.C; return L.orig || null; }
+function propPosicao(l) {
+  var L = MQ.L[l]; if (!L.des) return '';
+  var p = MQ.modo === 'foto' ? (L.y < 0.45 && Math.abs(L.x - 0.5) > 0.06 ? 'no peito ' + (L.x > 0.5 ? 'esquerdo' : 'direito') : 'na frente') : (l === 'C' ? 'nas costas' : (Math.abs(L.x - 0.5) > 0.06 ? 'no peito ' + (L.x > 0.5 ? 'esquerdo' : 'direito') : 'na frente'));
+  return p + ' · cerca de ' + fmtCm(L.wcm) + ' cm';
+}
+function propGerar(cb) {
+  var d = propDados(), cli = (mqCliente() || 'Cliente').toUpperCase(), logoC = logoCliente();
+  var tec = d.tec, lados = (MQ.modo === 'foto' ? ['F'] : ['F', 'C']).filter(function (l) { return MQ.L[l].des; });
+  var pers = 'Logótipo ' + cli + ' ' + lados.map(propPosicao).join(' e ') + ' · ' + tec;
+  // maquete em alta resolução
+  var t = mqTamanhoCv(), W0 = t.W, H0 = t.H, k = 1400 / W0, off = document.createElement('canvas'); off.width = Math.round(W0 * k); off.height = Math.round(H0 * k);
+  var ox = off.getContext('2d'); ox.setTransform(k, 0, 0, k, 0, 0);
+  var vistaAntes = MQ.vista; if (MQ.modo !== 'foto' && MQ.L.C.des && MQ.L.F.des) MQ.vista = 'FC';
+  mqDesenharEm(ox, W0, H0, false, MQ.modo !== 'foto'); MQ.vista = vistaAntes;
+  var A = MQ._areas, zF, zDet;
+  mqDesenhar();
+  if (MQ.modo === 'foto') {
+    var pk = MQ.peca ? Math.min(W0 / MQ.peca.width, H0 / MQ.peca.height) : 1, pw = MQ.peca ? MQ.peca.width * pk : W0, ph = MQ.peca ? MQ.peca.height * pk : H0;
+    zF = [(W0 - pw) / 2 * k, (H0 - ph) / 2 * k, pw * k, ph * k];
+    var L = MQ.L.F, a = A.F, cx = (a.zona[0] + L.x * a.zona[2]) * k, cy = (a.zona[1] + L.y * a.zona[3]) * k, dw = Math.max(L.wcm * a.ppc * k * 2.6, 300);
+    zDet = [cx - dw / 2, cy - dw * 0.55, dw, dw * 1.08];
+  } else {
+    var vs = MQ.L.C.des && MQ.L.F.des ? ['F', 'C'] : [MQ.L.C.des ? 'C' : 'F'];
+    var aF = A[vs[0]]; zF = [aF.ox * k, aF.oy * k, aF.w * k, aF.w * 1.12 * k];
+    if (vs.length > 1) { var aC = A.C; zDet = [aC.ox * k, aC.oy * k, aC.w * k, aC.w * 1.12 * k]; }
+    else { var L2 = MQ.L[vs[0]], z = aF.zona, c2x = (z[0] + L2.x * z[2]) * k, c2y = (z[1] + L2.y * z[3]) * k, d2 = Math.max(L2.wcm * aF.ppc * k * 2.4, 260); zDet = [c2x - d2 / 2, c2y - d2 * 0.55, d2, d2 * 1.08]; }
+  }
+  // o detalhe fica sempre dentro da foto / da vista
+  var zB = MQ.modo === 'foto' ? zF : [0, 0, off.width, off.height];
+  if (zDet[2] > zB[2]) { zDet[3] *= zB[2] / zDet[2]; zDet[2] = zB[2]; }
+  if (zDet[3] > zB[3]) { zDet[2] *= zB[3] / zDet[3]; zDet[3] = zB[3]; }
+  zDet[0] = Math.max(zB[0], Math.min(zDet[0], zB[0] + zB[2] - zDet[2])); zDet[1] = Math.max(zB[1], Math.min(zDet[1], zB[1] + zB[3] - zDet[3]));
+  Promise.all([imgDe(LOGO_INO), logoC ? Promise.resolve(logoC) : Promise.resolve(null), document.fonts && document.fonts.load ? document.fonts.load('900 60px Inter').catch(function () {}) : 0])
+  .then(function (r) {
+    var li = r[0], lc = r[1], F = '"Inter", "Inter Display", Arial, sans-serif';
+    var c = document.createElement('canvas'), Wp = 1754, Hp = 1240, mm = Wp / 297; c.width = Wp; c.height = Hp;
+    var x = c.getContext('2d'), Lw = Math.round(138 * mm);
+    // foto
+    if (MQ.modo === 'foto') { x.fillStyle = '#e9ecef'; x.fillRect(0, 0, Lw, Hp); cobrir(x, off, zF[0], zF[1], zF[2], zF[3], 0, 0, Lw, Hp, 0.5, 0.18); }
+    else {   // peça desenhada: inteira, centrada, sobre fundo claro
+      var gl = x.createLinearGradient(0, 0, 0, Hp); gl.addColorStop(0, '#f4f6fa'); gl.addColorStop(1, '#dde3ec'); x.fillStyle = gl; x.fillRect(0, 0, Lw, Hp);
+      var pad = 70, kz = Math.min((Lw - 2 * pad) / zF[2], (Hp - 2 * pad - 40) / zF[3]), dwz = zF[2] * kz, dhz = zF[3] * kz;
+      x.drawImage(off, zF[0], zF[1], zF[2], zF[3], (Lw - dwz) / 2, (Hp - dhz) / 2 + 10, dwz, dhz);
+    }
+    // etiqueta e nota
+    x.font = '800 15px ' + F; esp(x, '3px'); var t1 = 'PROPOSTA · ', t2 = cli, w1 = x.measureText(t1).width, w2 = x.measureText(t2).width;
+    x.fillStyle = '#fff'; rr(x, 8 * mm, 8 * mm, w1 + w2 + 40, 40, 20); x.fill(); x.fillStyle = '#14213D'; x.fillText(t1, 8 * mm + 20, 8 * mm + 26); x.fillStyle = '#C2268F'; x.fillText(t2, 8 * mm + 20 + w1, 8 * mm + 26);
+    esp(x, '0px');
+    var nota = d.nota || 'Imagem ilustrativa · cores e proporções aproximadas';
+    x.font = '500 14px ' + F; var nw = x.measureText(nota).width; x.fillStyle = 'rgba(15,26,48,.6)'; rr(x, 8 * mm, Hp - 7 * mm - 32, nw + 28, 32, 16); x.fill(); x.fillStyle = '#fff'; x.fillText(nota, 8 * mm + 14, Hp - 7 * mm - 11);
+    // painel
+    var P0 = Lw, PW = Wp - Lw, g = x.createRadialGradient(Wp, 0, 10, Wp, 0, PW * 1.35); g.addColorStop(0, '#2b4a85'); g.addColorStop(0.45, '#1a2c52'); g.addColorStop(1, '#0f1a30');
+    x.fillStyle = g; x.fillRect(P0, 0, PW, Hp);
+    var X = P0 + 10 * mm, XR = Wp - 10 * mm, y = 9 * mm, cw = XR - X;
+    // logótipos
+    var bh = 24 * mm;
+    if (li) { var bw = bh * li.width / li.height + 22; x.fillStyle = '#fff'; rr(x, X, y, bw, bh, 18); x.fill(); x.drawImage(li, X + 11, y + 9, bw - 22, bh - 18); var xTxt = X + bw + 20; }
+    else var xTxt = X;
+    var lcw = 0;
+    if (lc) { var lh = bh, lw2 = Math.min(lh * 2.6, Math.max(lh, (lh - 24) * lc.width / lc.height + 24)); lcw = lw2; var esc2 = claroOuEscuro(lc) === 'claro';
+      x.fillStyle = esc2 ? '#0f1a30' : '#fff'; rr(x, XR - lw2, y, lw2, lh, 18); x.fill(); if (esc2) { x.strokeStyle = 'rgba(255,255,255,.35)'; x.lineWidth = 1.5; x.stroke(); }
+      var iw = lw2 - 24, ih = lh - 24, kk = Math.min(iw / lc.width, ih / lc.height); x.drawImage(lc, XR - lw2 + 12 + (iw - lc.width * kk) / 2, y + 12 + (ih - lc.height * kk) / 2, lc.width * kk, lc.height * kk); }
+    x.fillStyle = '#aab6d3'; x.font = '500 14px ' + F; esp(x, '4px'); x.fillText('PROPOSTA PERSONALIZADA PARA', xTxt, y + bh / 2 - 12); esp(x, '0px');
+    x.fillStyle = '#fff'; var fc = 46; x.font = '900 ' + fc + 'px ' + F; while (x.measureText(cli).width > (XR - lcw - 16 - xTxt) && fc > 24) { fc -= 2; x.font = '900 ' + fc + 'px ' + F; }
+    x.fillText(cli, xTxt, y + bh / 2 + fc * 0.78);
+    y += bh + 9 * mm;
+    // nome grande + descrição
+    var tit = d.titulo.toUpperCase(), ft = 128; x.font = '900 ' + ft + 'px ' + F; esp(x, '-3px');
+    var maxT = d.sub ? cw * 0.62 : cw; while (x.measureText(tit).width > maxT && ft > 54) { ft -= 4; x.font = '900 ' + ft + 'px ' + F; }
+    x.fillStyle = '#fff'; x.fillText(tit, X - 3, y + ft * 0.78); var tw = x.measureText(tit).width; esp(x, '0px');
+    if (d.sub) { x.font = '700 22px ' + F; var sl = linhas(x, d.sub, cw - tw - 24).slice(0, 2); sl.forEach(function (s, i) { x.fillText(s, X + tw + 24, y + ft * 0.78 - (sl.length - 1 - i) * 28); }); }
+    y += ft * 0.82 + 8 * mm;
+    // detalhe + características
+    var dW = 52 * mm, dH = 56 * mm;
+    x.save(); x.shadowColor = 'rgba(0,0,0,.35)'; x.shadowBlur = 24; x.shadowOffsetY = 8; rr(x, X, y, dW, dH, 22); x.fillStyle = '#eef1f6'; x.fill(); x.restore();
+    x.save(); rr(x, X, y, dW, dH, 22); x.clip();
+    if (MQ.modo !== 'foto' && MQ.L.F.des && MQ.L.C.des) { x.fillStyle = '#eef1f6'; x.fillRect(X, y, dW, dH); var kd = Math.min((dW - 30) / zDet[2], (dH - 60) / zDet[3]); x.drawImage(off, zDet[0], zDet[1], zDet[2], zDet[3], X + (dW - zDet[2] * kd) / 2, y + 12, zDet[2] * kd, zDet[3] * kd); }
+    else cobrir(x, off, zDet[0], zDet[1], zDet[2], zDet[3], X, y, dW, dH);
+    x.restore();
+    var lbD = MQ.modo !== 'foto' && MQ.L.F.des && MQ.L.C.des ? 'COSTAS' : 'DETALHE DO LOGÓTIPO'; x.font = '700 13px ' + F; esp(x, '2.5px'); var lbw = x.measureText(lbD).width;
+    x.fillStyle = '#C2268F'; rr(x, X + 14, y + dH - 46, lbw + 28, 32, 16); x.fill(); x.fillStyle = '#fff'; x.fillText(lbD, X + 28, y + dH - 25); esp(x, '0px');
+    var fx = X + dW + 7 * mm, fw = XR - fx, fy = y + 6;
+    var feats = String(d.feats || '').split('\n').map(function (s) { return s.trim(); }).filter(String);
+    if (!feats.length) feats = [d.sub || ''].filter(String);
+    x.font = '400 19px ' + F;
+    feats.forEach(function (f) { var ls = linhas(x, f, fw - 26); if (fy + ls.length * 26 > y + dH) return; x.fillStyle = '#C2268F'; x.beginPath(); x.arc(fx + 6, fy + 9, 6, 0, 7); x.fill();
+      x.fillStyle = '#e6ebf5'; ls.forEach(function (s, i) { x.fillText(s, fx + 26, fy + 16 + i * 26); }); fy += ls.length * 26 + 12; });
+    y += dH + 6 * mm;
+    // personalização
+    x.font = '700 22px ' + F; var pl = linhas(x, pers, cw - 120).slice(0, 2), ph2 = 52 + pl.length * 28;
+    rr(x, X, y, cw, ph2, 22); x.fillStyle = 'rgba(194,38,143,.14)'; x.fill(); x.strokeStyle = 'rgba(194,38,143,.9)'; x.lineWidth = 2.5; x.stroke();
+    x.fillStyle = '#C2268F'; x.beginPath(); x.arc(X + 48, y + ph2 / 2, 26, 0, 7); x.fill(); x.strokeStyle = '#fff'; x.lineWidth = 5; x.lineCap = 'round'; x.beginPath(); x.moveTo(X + 37, y + ph2 / 2 + 1); x.lineTo(X + 45, y + ph2 / 2 + 9); x.lineTo(X + 60, y + ph2 / 2 - 8); x.stroke();
+    x.fillStyle = '#f3b6dc'; x.font = '500 14px ' + F; esp(x, '3px'); x.fillText('PERSONALIZAÇÃO', X + 96, y + 32); esp(x, '0px');
+    x.fillStyle = '#fff'; x.font = '700 22px ' + F; pl.forEach(function (s, i) { x.fillText(s, X + 96, y + 62 + i * 28); });
+    y += ph2 + 7 * mm;
+    // cores e tamanhos
+    var colW = cw / 2;
+    x.fillStyle = '#aab6d3'; x.font = '500 14px ' + F; esp(x, '3px'); if (d.cores.length) x.fillText('CORES DISPONÍVEIS', X, y); var tams = String(d.tams || '').split(/[\s,]+/).filter(String); if (tams.length) x.fillText('TAMANHOS', X + colW, y); esp(x, '0px');
+    var sx = X, sy = y + 22, sw = 96;
+    d.cores.slice(0, 10).forEach(function (cn, i) { var cx2 = X + (i % 5) * sw + 26, cy2 = sy + Math.floor(i / 5) * 104 + 26;
+      x.save(); x.shadowColor = 'rgba(0,0,0,.35)'; x.shadowBlur = 8; x.shadowOffsetY = 3; x.beginPath(); x.arc(cx2, cy2, 24, 0, 7); x.fillStyle = corHex(cn); x.fill(); x.restore();
+      x.strokeStyle = 'rgba(255,255,255,.8)'; x.lineWidth = 3; x.beginPath(); x.arc(cx2, cy2, 24, 0, 7); x.stroke();
+      x.fillStyle = '#dfe5f2'; x.font = '400 14px ' + F; x.textAlign = 'center'; var m = String(cn).match(/^(\d+)\s+(.*)$/), nomeC = m ? m[2] : cn;
+      linhas(x, nomeC.replace(/-/g, ' '), sw - 6).slice(0, 2).forEach(function (s, j) { x.fillText(s, cx2, cy2 + 46 + j * 17); }); if (m) x.fillText(m[1], cx2, cy2 + 46 + Math.min(2, linhas(x, nomeC, sw - 6).length) * 17); x.textAlign = 'left'; });
+    var tx = X + colW, ty = sy + 4; x.font = '700 16px ' + F;
+    tams.forEach(function (tm) { var w = x.measureText(tm).width + 30; if (tx + w > XR) { tx = X + colW; ty += 46; } rr(x, tx, ty, w, 38, 19); x.strokeStyle = 'rgba(255,255,255,.5)'; x.lineWidth = 1.5; x.stroke(); x.fillStyle = '#fff'; x.fillText(tm, tx + 15, ty + 25); tx += w + 8; });
+    // rodapé
+    x.strokeStyle = 'rgba(255,255,255,.15)'; x.lineWidth = 1; x.beginPath(); x.moveTo(X, Hp - 8 * mm - 26); x.lineTo(XR, Hp - 8 * mm - 26); x.stroke();
+    x.fillStyle = '#8ea0c6'; x.font = '400 13px ' + F; x.fillText('INOVASTAMP, Lda · Estamparia têxtil', X, Hp - 8 * mm); x.textAlign = 'right'; x.fillText('joaoinovastamp@gmail.com · Póvoa de Lanhoso', XR, Hp - 8 * mm); x.textAlign = 'left';
+    cb(c);
+  });
+}
+function propVer() {
+  propGuardarCampos();
+  if (!temDesenho()) { msg('Carrega primeiro o desenho do cliente.', true); return; }
+  propGerar(function (c) { $('ppPrev').innerHTML = '<img src="' + c.toDataURL('image/jpeg', 0.85) + '" style="width:100%;border-radius:10px;margin-top:8px">'; });
 }
 
 // ---------------- v31: aprovação da maquete ----------------
