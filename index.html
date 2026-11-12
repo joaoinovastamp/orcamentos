@@ -157,7 +157,16 @@ function abrirPdf(num) {
 function navOn(id) { ['n-lista','n-novo','n-cons','n-enc','n-res','n-maq'].forEach(function (n) { $(n).className = n === id ? 'on' : ''; }); window.scrollTo(0, 0); }
 
 // ---------------- arranque ----------------
-function iniciar() { if (!PIN) { entrar(); return; } call('apiInit').then(function (d) { D = d; irLista(true); }); }
+var ABRIR_OP = (function () { try { return new URLSearchParams(location.search).get('op') || ''; } catch (e) { return ''; } })(), OP_FOCO = false;
+function iniciar() {
+  if (!PIN) { entrar(); return; }
+  call('apiInit').then(function (d) {
+    D = d;
+    if (ABRIR_OP) { var n = ABRIR_OP; ABRIR_OP = ''; try { history.replaceState(null, '', location.pathname); } catch (e) {} OP_FOCO = true; abrir(n); }
+    else irLista(true);
+  });
+}
+function js(v) { return esc(JSON.stringify(v)); }
 function entrar(erro) {
   $('titulo').textContent = 'INOVASTAMP';
   $('main').innerHTML = '<div class="card" style="margin-top:30px"><div class="b" style="font-size:17px">Código da app</div>' +
@@ -241,6 +250,8 @@ function desenharDetalhe(o) {
   h += '<h2>Encomenda ao fornecedor</h2><div class="card"><div class="mut">Passa os artigos deste orçamento para a aba Encomenda (separados por tamanho, se os tiveres indicado) e guarda-a como rascunho. ' +
     'Revês e envias na folha (INOVASTAMP › Enviar encomenda).</div><div class="acts">' +
     Object.keys(forn).map(function (f) { return '<button class="btn sec" onclick="criarEncomenda(' + n + ',\'' + f + '\')">Criar encomenda ' + f + '</button>'; }).join('') + '</div></div>';
+  h += '<h2>Maquete e tamanhos da equipa</h2><div class="card"><div class="acts"><button class="btn sec" onclick="pedirAprovMaq()">Pedir aprovação da maquete</button>' +
+    '<button class="btn sec" onclick="abrirRecolha()">Tamanhos da equipa (link)</button></div><div id="maqApZona"></div><div id="recZona"></div></div>';
   h += '<h2>Estado e faturação</h2><div class="card"><div class="g2"><div><label>Estado</label><select id="dEst">' +
     D.estados.map(function (e) { return '<option' + (e === o.estado ? ' selected' : '') + '>' + e + '</option>'; }).join('') + '</select></div>' +
     '<div><label>Nº Fatura</label><input id="dFat" value="' + esc(o.fatura) + '" placeholder="ex.: FT 2026/15"></div></div>' +
@@ -336,13 +347,14 @@ function novo() {
   ED = { numero: '', data: D.hoje, cliente: '', nif: '', email: '', tel: '', morada: '', cp: '', validade: 30, obs: '', desconto: '', estado: '', fatura: '', margemGlobal: '', linhas: [] };
   CALC = null; desenharEditor(); escolherProduto(null);
 }
-function editar(num) {
+function editar(num, depois) {
   call('apiAbrir', num).then(function (o) {
     ED = { numero: o.num, data: o.data, cliente: o.cliente, nif: o.nif, email: o.email, tel: o.tel, morada: o.morada, cp: o.cp,
            validade: o.validade, obs: o.obs, desconto: o.desconto === '' ? '' : Math.round(o.desconto * 1000) / 10, estado: o.estado, fatura: o.fatura,
            linhas: o.linhas.map(function (l) { return { produto: l.produto, ref: l.ref, cor: l.cor, qtd: l.qtd, tam: l.tam || '', margemAj: l.margemAj === '' ? '' : Math.round(l.margemAj * 1000) / 10,
              pers1: l.pers1, precoAj1: l.precoAj1, pers2: l.pers2, precoAj2: l.precoAj2 }; }) };
     ED.margemGlobal = ED.linhas.length && ED.linhas.every(function (l) { return l.margemAj !== '' && l.margemAj === ED.linhas[0].margemAj; }) ? ED.linhas[0].margemAj : '';
+    if (depois) depois();
     CALC = null; desenharEditor();
   });
 }
@@ -393,7 +405,7 @@ function desenharLinhas() {
       '<div><label>Pers. 1 €/pç</label><input type="number" step="0.05" value="' + esc(l.precoAj1) + '" placeholder="' + (c && c.tab1 !== '' ? eur(c.tab1) : 'tabela') + '" onchange="ED.linhas[' + i + '].precoAj1=this.value===\'\'?\'\':Number(this.value);mudou()"></div>' +
       '<div><label>Pers. 2 €/pç</label><input type="number" step="0.05" value="' + esc(l.precoAj2) + '" placeholder="' + (c && c.tab2 !== '' ? eur(c.tab2) : 'tabela') + '" onchange="ED.linhas[' + i + '].precoAj2=this.value===\'\'?\'\':Number(this.value);mudou()"></div>' +
       '</div><div class="mut">Vazio = tabela. Personalização nunca abaixo de 1 €. As posições sem preço na tabela (ex.: DTF) precisam do preço aqui.</div>' +
-      '<button class="btn lite" onclick="dtfDaLinha(' + i + ')">✎ Simular DTF / maquete para este artigo</button></details>' +
+      '<button class="btn lite" onclick="dtfDaLinha(' + i + ')">✎ Simular DTF / maquete para este artigo</button><button class="btn lite" onclick="seriDaLinha(' + i + ')">✎ Calcular serigrafia para este artigo</button></details>' +
       (c ? '<div class="row num" style="margin-top:8px"><span class="sp mut">' + esc(c.escalao) + ' pç · peça ' + eur(c.pecaS) + ' + pers. ' + eur(c.persU) + ' s/IVA</span></div>' +
         '<div class="row num"><span class="sp">' + l.qtd + ' × <b>' + eur(c.unitC) + '</b> c/IVA</span><b>' + eur(c.totC) + '</b></div>' : '') +
       '</div>';
@@ -569,6 +581,9 @@ function desenharResumo() {
       '<div class="tot"><span>Vendido s/ IVA</span><span class="num">' + eur(m.valor) + '</span></div><div class="tot"><span>Custo das peças</span><span class="num">' + eur(m.custo) + '</span></div>' +
       '<div class="tot big"><span>Margem bruta</span><span class="num">' + eur(m.lucro) + ' · ' + pct(m.pct) + '</span></div></div>';
   }
+  var em = r.emprestimos;
+  if (em && em.abertos) h += '<div class="card" style="margin-top:10px" onclick="irEmprestimos()"><div class="row"><div class="sp"><div class="b">Amostras emprestadas</div><div class="mut">' + em.abertos + ' empréstimo(s) · ' + em.pecas + ' pç fora' +
+    (em.atrasados ? ' · <span class="alerta">' + em.atrasados + ' atrasado(s)</span>' : '') + '</div></div><div class="b">›</div></div></div>';
   if (r.abertos.length) h += '<h2>Enviados, à espera de resposta</h2><div class="card">' + r.abertos.map(function (o) { return linhaOrc(o, o.envio ? 'enviado há ' + diasDesde(o.envio) : dt(o.data)); }).join('') + '</div>';
   if (r.aceitesPorFaturar.length) h += '<h2>Aceites por faturar</h2><div class="card">' + r.aceitesPorFaturar.map(function (o) { return linhaOrc(o, o.estado); }).join('') + '</div>';
   if (r.margemReal && r.margemReal.length) {
@@ -588,7 +603,7 @@ function desenharResumo() {
   }).join('') + '</div>';
   h += '<h2>Clientes</h2><input placeholder="Procurar cliente ou NIF…" value="' + esc(CBUSCA) + '" oninput="CBUSCA=this.value;itensClientes()"><div style="height:6px"></div><div id="cItens"></div>';
   h += '<h2>Catálogo para cliente</h2><div class="card"><div class="mut">PDF com fotos e preços por escalão dos artigos que escolheres.</div><div class="acts"><button class="btn sec" onclick="irCatalogo()">Criar catálogo</button></div></div>';
-  h += '<div class="acts"><button class="btn sec" onclick="irStock()">Ver stock</button></div>';
+  h += '<div class="acts"><button class="btn sec" onclick="irStock()">Ver stock</button><button class="btn sec" onclick="irEmprestimos()">Empréstimos</button><button class="btn sec" onclick="irQuadros()">Quadros</button></div>';
   h += '<h2>Modo gestor</h2><div class="card">' + (gestor() ? '<div class="ok-t">🔒 Ativo neste telemóvel: vês o lucro e a margem.</div><div class="acts"><button class="btn sec" onclick="sairGestor()">Desligar neste telemóvel</button></div>'
     : '<div class="mut">Mostra o lucro, a margem e a margem real. Código definido na folha (INOVASTAMP › Extras › Definir código de gestor).</div>' +
       '<input id="gpin" type="password" placeholder="Código de gestor" style="margin-top:8px"><div class="acts"><button class="btn" onclick="entrarGestor()">Ativar</button></div>') + '</div>';
@@ -618,6 +633,9 @@ function fichaCliente(nome, nif) {
     h += '<div class="kpi"><div class="card"><div class="mut">Orçamentos</div><div class="v">' + c.total.n + '</div><div class="mut">' + c.total.ganhos + ' aceites</div></div>' +
       '<div class="card"><div class="mut">Aceite (s/ IVA)</div><div class="v num">' + eur(c.total.valorGanho) + '</div><div class="mut">Faturado ' + eur(c.total.faturado) + '</div></div></div>';
     if (c.ultimo) h += '<div class="mut" style="margin:8px 2px">Último orçamento: ' + dt(c.ultimo) + ' (há ' + diasDesde(c.ultimo) + ')</div>';
+    var x = c.extra || { quadrosGuardados: 0, emprestimos: 0 };
+    h += '<div class="acts">' + (c.total.ganhos ? '<button class="btn sec" onclick="repetirUltimo()">↻ Repetir último trabalho</button>' : '') +
+      '<button class="btn sec" onclick="irQuadros(FICHA)">Quadros (' + x.quadrosGuardados + ')</button><button class="btn sec" onclick="irEmprestimos(FICHA)">Amostras' + (x.emprestimos ? ' (' + x.emprestimos + ' fora)' : '') + '</button></div>';
     if (c.artigos.length) h += '<h2>Artigos habituais</h2><div class="card">' + c.artigos.map(function (a) {
       return '<div class="lin row">' + foto(a.ref) + '<div class="sp"><div class="b">' + esc(nomeCurto(a.produto)) + '</div><div class="mut">' + esc(a.ref) + ' · ' + esc(a.cor || 'sem cor') +
         ' · ' + a.vezes + 'x · último ' + eur(a.unitC) + ' c/IVA</div></div><div class="b num">' + a.qtd + ' pç</div></div>';
@@ -688,7 +706,7 @@ function ladoAtual() { return MQ.L[MQ.modo === 'foto' ? 'F' : MQ.lado]; }
 function irMaquete() {
   navOn('n-maq'); $('titulo').textContent = 'Maquete e DTF';
   var L = ladoAtual(), foto = MQ.modo === 'foto';
-  var h = '<div class="chips"><button class="chip' + (!foto ? ' on' : '') + '" onclick="MQ.modo=\'modelo\';irMaquete()">Modelo (frente e costas)</button>' +
+  var h = sepMaq('maq') + '<div class="chips"><button class="chip' + (!foto ? ' on' : '') + '" onclick="MQ.modo=\'modelo\';irMaquete()">Modelo (frente e costas)</button>' +
     '<button class="chip' + (foto ? ' on' : '') + '" onclick="MQ.modo=\'foto\';irMaquete()">Foto do catálogo</button></div>' +
     '<div class="card"><div class="g2"><div><label>Cliente</label><input id="mqCli" list="dlMqCli" value="' + esc(MQ.cli ? MQ.cli.nome : '') + '" onchange="mqEscolherCliente(this.value)">' +
     '<datalist id="dlMqCli">' + D.clientes.map(function (c) { return '<option value="' + esc(c[0]) + '">'; }).join('') + '</datalist></div>' +
@@ -1044,7 +1062,8 @@ function desenharProducao() {
     h += l.length ? '<div class="card">' + l.map(function (o) {
       var falta = Math.round((o.tC - o.pago) * 100) / 100;
       return '<div class="lin" onclick="abrir(\'' + esc(o.num) + '\')"><div class="row"><div class="sp"><div class="b">' + esc(o.cliente) + '</div><div class="mut">' + esc(o.num) +
-        (o.op ? ' · ' + esc(o.op) : '') + ' · ' + o.qtd + ' pç · ' + infoEntrega(o) + '</div></div><div style="text-align:right"><div class="b num">' + eur(o.tC) + '</div>' +
+        (o.op ? ' · ' + esc(o.op) : '') + ' · ' + o.qtd + ' pç · ' + infoEntrega(o) + (o.maq ? ' · maquete ' + (o.maq === 'Aprovada' ? '✓' : o.maq === 'Alterações pedidas' ? '<span class="alerta">✎ alterações</span>' : '⏳') : '') +
+        '</div></div><div style="text-align:right"><div class="b num">' + eur(o.tC) + '</div>' +
         (falta > 0.005 ? '<div class="mut num">falta ' + eur(falta) + '</div>' : '<div class="ok-t">pago</div>') + '</div></div>' +
         (f !== 'Entregue' ? '<div class="acts" style="margin-top:4px">' + PROD.fases.filter(function (x) { return PROD.fases.indexOf(x) === PROD.fases.indexOf(f) + 1; }).map(function (x) {
           return '<button class="btn lite" onclick="event.stopPropagation();mudarFase(\'' + esc(o.num) + '\',\'' + esc(x) + '\')">→ ' + esc(x) + '</button>';
@@ -1055,6 +1074,7 @@ function desenharProducao() {
 }
 function mudarFase(num, fase) {
   var o = PROD.lista.filter(function (x) { return x.num === num; })[0]; if (!o) return;
+  if (PROD.fases.indexOf(fase) >= 2 && o.maq && o.maq !== 'Aprovada' && !confirm('A maquete de ' + num + ' ainda não foi aprovada pelo cliente. Avançar na mesma?')) return;
   call('apiProdGuardar', num, { fase: fase, entrega: o.entrega, notas: o.notas }).then(function (r) {
     msg(num + ': ' + fase + (r.estado === 'Em produção' && o.estado === 'Aceite' ? ' (estado: Em produção)' : '')); LISTA = [];
     if (fase === 'Pronto') { abrir(num); setTimeout(function () { if ($('msgZona')) mensagem('pronto'); }, 1500); } else irProducao();
@@ -1075,11 +1095,13 @@ function carregarProd(num) { call('apiProdAbrir', num).then(function (p) { PR = 
 function desenharProd() {
   var p = PR, z = $('prodZona'); if (!z || !ATUAL || p.num !== ATUAL.num) return;
   var falta = Math.round((p.tC - p.pago) * 100) / 100;
-  var h = '<h2>Produção' + (p.op ? ' · ' + esc(p.op) : '') + '</h2><div class="card"><div class="g2"><div><label>Fase</label><select id="pFase">' + opts(p.fases, p.fase) + '</select></div>' +
+  var h = '<h2>Produção' + (p.op ? ' · ' + esc(p.op) : '') + '</h2><div class="card"><div class="chips" style="flex-wrap:wrap">' + p.fases.map(function (f) {
+      return '<button class="chip' + (f === p.fase ? ' on' : '') + '" onclick="faseRapida(' + js(f) + ')">' + esc(f) + '</button>'; }).join('') + '</div>' +
+    '<div class="g2"><div><label>Fase</label><select id="pFase">' + opts(p.fases, p.fase) + '</select></div>' +
     '<div><label>Data de entrega</label><input id="pEnt" type="date" value="' + esc(p.entrega) + '"></div></div>' +
     '<label>Notas de produção (oficina)</label><textarea id="pNotas" rows="2" placeholder="ex.: logótipo frente 25 cm, costas nome + nº">' + esc(p.notas) + '</textarea>' +
     '<div class="acts"><button class="btn ok" onclick="guardarProd()">Guardar produção</button><button class="btn sec" onclick="fichaProducao()">Ficha de produção (PDF)</button></div>' +
-    '<div class="mut">' + (p.maquete ? '✓ Tem maquete — vai na ficha.' : 'Sem maquete: usa "✎ Maquete deste orçamento" e "Guardar no orçamento" para ir na ficha.') + '</div><div id="opZona"></div></div>';
+    infoMaqProd(p) + '<div id="opZona"></div></div>';
   h += '<h2>Pagamentos</h2><div class="card"><div class="tot"><span>Total c/ IVA</span><span class="num">' + eur(p.tC) + '</span></div>' +
     '<div class="tot"><span>Pago</span><span class="num">' + eur(p.pago) + '</span></div>' +
     '<div class="tot big"><span>' + (falta > 0.005 ? 'Falta' : 'Pago na totalidade') + '</span><span class="num">' + (falta > 0.005 ? eur(falta) : '✓') + '</span></div>' +
@@ -1092,6 +1114,7 @@ function desenharProd() {
     '<div><label>Data</label><input id="pgD" type="date" value="' + esc(D.hoje) + '"></div></div><label>Nota</label><input id="pgN" placeholder="ex.: sinal 50%">' +
     '<div class="acts"><button class="btn sec" onclick="registarPag()">Registar pagamento</button></div><div class="mut">Valor vazio = ' + (p.pago ? 'o que falta' : 'sinal de 50%') + '.</div></div>';
   $('prodZona').innerHTML = h;
+  if (OP_FOCO) { OP_FOCO = false; setTimeout(function () { var z = $('prodZona'); if (z) z.scrollIntoView({ behavior: 'smooth' }); }, 150); }
 }
 function guardarProd() {
   call('apiProdGuardar', ATUAL.num, { fase: $('pFase').value, entrega: $('pEnt').value, notas: $('pNotas').value }).then(function (r) {
@@ -1121,18 +1144,23 @@ function opAbrir() { var url = URL.createObjectURL(new Blob([OPPDF.a], { type: '
 function opPartilhar() { navigator.share({ files: [new File([OPPDF.a], OPPDF.nome, { type: 'application/pdf' })], title: OPPDF.nome }).catch(function () {}); }
 // --- mensagens ao cliente (texto editável; envia por WhatsApp ou email) ---
 var MORADA = 'Travessa do Parque Industrial, nº 206, 4830-835 Vilela, Póvoa de Lanhoso';
-function mensagem(tipo) {
+function mensagem(tipo, link, zona) {
   var o = ATUAL; if (!o) return;
+  zona = zona || 'msgZona';
+  ['msgZona', 'maqApMsg', 'recMsg'].forEach(function (z) { if (z !== zona && $(z)) $(z).innerHTML = ''; });
   var p = PR && PR.num === o.num ? PR : { tC: o.tC, pago: 0 }, falta = Math.max(0, Math.round((p.tC - p.pago) * 100) / 100), ola = 'Bom dia' + (o.cliente ? ' ' + o.cliente : '') + ',\n\n';
   var t = tipo === 'sinal' ? ola + 'Obrigado pela adjudicação do orçamento ' + o.num + ' (' + eur(o.tC) + ' com IVA).\nPara avançarmos com a encomenda do material e a produção, agradecemos o sinal de 50% (' + eur(Math.round(o.tC / 2 * 100) / 100) + '), por MB Way ou transferência. Enviaremos a confirmação do prazo de entrega.\n\nObrigado,\nINOVASTAMP'
     : tipo === 'pronto' ? ola + 'A sua encomenda (orçamento ' + o.num + ') está pronta para levantamento.\n' + (falta > 0.005 ? 'Valor em falta: ' + eur(falta) + '.\n' : '') + 'Morada: ' + MORADA + '.\n\nObrigado,\nINOVASTAMP'
+    : tipo === 'maquete' ? ola + 'Segue a maquete da personalização (orçamento ' + o.num + ') para aprovação:\n' + link + '\n\nNa página pode aprovar ou pedir alterações.\n\nObrigado,\nINOVASTAMP'
+    : tipo === 'tamanhos' ? ola + 'Para prepararmos a encomenda (orçamento ' + o.num + '), pedimos que cada colaborador indique o seu tamanho neste link:\n' + link + '\n\nDemora menos de um minuto e pode reencaminhar esta mensagem à equipa.\n\nObrigado,\nINOVASTAMP'
     : ola + 'Relembramos que está em falta o pagamento de ' + eur(falta) + ' referente ao orçamento ' + o.num + (o.fatura ? ' (fatura ' + o.fatura + ')' : '') + '.\nPode pagar por MB Way ou transferência. Se já efetuou o pagamento, por favor ignore esta mensagem.\n\nObrigado,\nINOVASTAMP';
-  var assunto = tipo === 'sinal' ? 'Orçamento ' + o.num + ' — sinal para avançar' : tipo === 'pronto' ? 'A sua encomenda está pronta — INOVASTAMP' : 'Pagamento em falta — orçamento ' + o.num;
-  $('msgZona').innerHTML = '<input id="mAss" value="' + esc(assunto) + '" style="margin-top:8px"><textarea id="mTxt" rows="8" style="margin-top:6px">' + esc(t) + '</textarea>' +
+  var assunto = tipo === 'sinal' ? 'Orçamento ' + o.num + ' — sinal para avançar' : tipo === 'pronto' ? 'A sua encomenda está pronta — INOVASTAMP'
+    : tipo === 'maquete' ? 'Maquete para aprovação — orçamento ' + o.num : tipo === 'tamanhos' ? 'Tamanhos da equipa — orçamento ' + o.num : 'Pagamento em falta — orçamento ' + o.num;
+  $(zona).innerHTML = '<input id="mAss" value="' + esc(assunto) + '" style="margin-top:8px"><textarea id="mTxt" rows="8" style="margin-top:6px">' + esc(t) + '</textarea>' +
     '<div class="acts"><button class="btn wa" onclick="msgWhats()">WhatsApp' + (o.tel ? ' (' + esc(o.tel) + ')' : '') + '</button><button class="btn" onclick="msgEmail()"' + (o.email ? '' : ' disabled') + '>Email</button></div>';
 }
 function msgWhats() { window.open('https://wa.me/' + telWa(ATUAL.tel) + '?text=' + encodeURIComponent($('mTxt').value), '_blank'); }
-function msgEmail() { call('apiEmailCliente', ATUAL.num, $('mAss').value, $('mTxt').value).then(function (r) { msg('Email enviado para ' + r.email); $('msgZona').innerHTML = ''; }); }
+function msgEmail() { var z = $('mTxt').parentNode; call('apiEmailCliente', ATUAL.num, $('mAss').value, $('mTxt').value).then(function (r) { msg('Email enviado para ' + r.email); z.innerHTML = ''; }); }
 // --- maquete a partir do orçamento ---
 function maqueteDoOrc() {
   var o = ATUAL; if (!o) return;
@@ -1209,6 +1237,495 @@ function encPdf(num) {
     var url = URL.createObjectURL(new Blob([a], { type: 'application/pdf' })), l = document.createElement('a');
     l.href = url; l.download = r.nome; l.target = '_blank'; document.body.appendChild(l); l.click(); l.remove(); setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
   });
+}
+
+// ---------------- v31: aprovação da maquete ----------------
+function infoMaqProd(p) {
+  if (!p.maquete) return '<div class="mut">Sem maquete: usa "✎ Maquete deste orçamento" e "Guardar maquete no orçamento" para ir na ficha.</div>';
+  var a = p.maqAp || {}, e = a.estado || '';
+  if (e === 'Aprovada') return '<div class="ok-t">✅ Maquete aprovada pelo cliente' + (a.data ? ' em ' + esc(a.data) : '') + (a.nome ? ' (' + esc(a.nome) + ')' : '') + ' — vai na ficha.</div>';
+  if (e === 'Alterações pedidas') return '<div class="alerta">✎ O cliente pediu alterações' + (a.data ? ' (' + esc(a.data) + ')' : '') + (a.comentario ? ': "' + esc(a.comentario) + '"' : '') +
+    '</div><div class="mut">Corrige na Maquete, "Guardar maquete no orçamento" e pede de novo a aprovação.</div>';
+  if (e) return '<div class="mut">⏳ Maquete à espera da aprovação do cliente.</div>';
+  return '<div class="mut">✓ Tem maquete — vai na ficha. Ainda não pediste a aprovação ao cliente (botão "Pedir aprovação da maquete").</div>';
+}
+function pedirAprovMaq() {
+  call('apiMaqAprovacao', ATUAL.num).then(function (r) {
+    var i = r.info || {};
+    $('maqApZona').innerHTML = '<div class="mut" style="margin-top:8px">' + (i.estado === 'Aprovada' ? '✅ Já aprovada' + (i.data ? ' em ' + esc(i.data) : '') + '. Podes reenviar o link na mesma.'
+      : i.estado === 'Alterações pedidas' ? '✎ O cliente pediu alterações' + (i.comentario ? ': "' + esc(i.comentario) + '"' : '') + '. Se já guardaste a maquete corrigida, envia o link outra vez.'
+      : 'O cliente abre o link, vê a maquete e carrega em "Aprovo" ou "Pedir alterações". Recebes um email com a resposta.') + '</div><div id="maqApMsg"></div>';
+    mensagem('maquete', r.link, 'maqApMsg');
+  });
+}
+
+// ---------------- v31: recolha de tamanhos por link ----------------
+var RECO = null;
+function abrirRecolha() { call('apiRecolha', ATUAL.num).then(function (r) { RECO = r; desenharRecolha(); }); }
+function totaisRecolha() {
+  var t = RECO.artigos.map(function () { return {}; });
+  RECO.respostas.forEach(function (x) { var a = t[x.art - 1]; if (a) a[x.tam] = (a[x.tam] || 0) + x.qtd; });
+  return t;
+}
+function tamOrdem(a, mapa) {
+  var ord = a.tams || [];
+  return Object.keys(mapa).sort(function (x, y) { var i = ord.indexOf(x), j = ord.indexOf(y); return ((i < 0 ? 999 : i) - (j < 0 ? 999 : j)) || (x < y ? -1 : 1); });
+}
+function desenharRecolha() {
+  var r = RECO, tot = totaisRecolha(), pessoas = {};
+  r.respostas.forEach(function (x) { (pessoas[x.nome] = pessoas[x.nome] || []).push(x); });
+  var nomes = Object.keys(pessoas).sort(function (a, b) { return a.localeCompare(b, 'pt'); });
+  var h = '<div class="mut" style="margin-top:8px">' + (r.fechado ? '🔒 Recolha fechada — o link já não aceita respostas.' : 'Cada pessoa abre o link, escreve o nome e escolhe o tamanho de cada peça.') +
+    ' <b>' + nomes.length + '</b> resposta(s).</div>' +
+    '<div class="acts"><button class="btn wa" onclick="mensagem(\'tamanhos\', RECO.link, \'recMsg\')">Enviar o link ao cliente</button><button class="btn sec" onclick="fecharRecolha(' + !r.fechado + ')">' +
+    (r.fechado ? 'Reabrir recolha' : 'Fechar recolha') + '</button></div><div id="recMsg"></div>';
+  h += r.artigos.map(function (a, k) {
+    var ks = tamOrdem(a, tot[k]), soma = ks.reduce(function (x, y) { return x + tot[k][y]; }, 0);
+    return '<div class="lin"><div class="b">' + a.i + '. ' + esc(nomeCurto(a.produto)) + (a.cor ? ' · ' + esc(a.cor) : '') + '</div><div class="mut">' +
+      (ks.length ? ks.map(function (t) { return '<b>' + esc(t) + '</b> ' + tot[k][t]; }).join(' · ') : 'sem respostas') + ' — ' + soma + ' de ' + a.qtd + ' pç' +
+      (soma && soma !== a.qtd ? ' <span class="alerta">(diferente da quantidade)</span>' : '') + '</div>' + (a.tam ? '<div class="mut">No orçamento: ' + esc(a.tam) + '</div>' : '') + '</div>';
+  }).join('');
+  if (nomes.length) h += '<details><summary>Respostas por pessoa (' + nomes.length + ')</summary>' + nomes.map(function (n) {
+    var it = pessoas[n], nota = it.map(function (x) { return x.nota; }).filter(String)[0];
+    return '<div class="lin row"><div class="sp"><div class="b">' + esc(n) + '</div><div class="mut">' + it.map(function (x) { return x.art + '. ' + esc(x.tam) + (x.qtd > 1 ? ' ×' + x.qtd : ''); }).join(' · ') +
+      (nota ? ' · ' + esc(nota) : '') + ' · ' + esc(it[0].data) + '</div></div><button class="x" onclick="apagarResposta(' + js(n) + ')">✕</button></div>';
+  }).join('') + '</details>' +
+    '<div class="acts"><button class="btn ok" onclick="passarTamanhos()">Passar os tamanhos para o orçamento</button></div>' +
+    '<div class="mut">Abre o orçamento em edição com os tamanhos (e a quantidade, se mudou). Revês, carregas em Calcular e guardas. A lista por pessoa vai na ficha de produção.</div>';
+  $('recZona').innerHTML = h;
+}
+function fecharRecolha(f) { call('apiRecolhaFechar', ATUAL.num, f).then(function (r) { RECO = r; desenharRecolha(); msg(f ? 'Recolha fechada.' : 'Recolha reaberta.'); }); }
+function apagarResposta(n) {
+  if (!confirm('Apagar as respostas de ' + n + '?')) return;
+  call('apiRecolhaApagar', ATUAL.num, n).then(function (r) { RECO = r; desenharRecolha(); });
+}
+function passarTamanhos() {
+  var tot = totaisRecolha(), r = RECO, mud = 0, qmud = 0;
+  editar(ATUAL.num, function () {
+    r.artigos.forEach(function (a, k) {
+      var ks = tamOrdem(a, tot[k]), l = ED.linhas[k]; if (!ks.length || !l) return;
+      var soma = ks.reduce(function (x, y) { return x + tot[k][y]; }, 0);
+      l.tam = ks.map(function (t) { return t + ':' + tot[k][t]; }).join(' ');
+      if (soma !== Number(l.qtd)) { l.qtd = soma; qmud++; }
+      mud++;
+    });
+    setTimeout(function () { msg(mud + ' artigo(s) com tamanhos' + (qmud ? ', ' + qmud + ' com quantidade nova' : '') + '. Carrega em Calcular e depois Guardar.'); }, 300);
+  });
+}
+
+// ---------------- v31: separadores da Maquete (Maquete · Folha DTF · Serigrafia) ----------------
+function sepMaq(atual) {
+  return '<div class="chips">' + [['maq', 'Maquete', 'irMaquete()'], ['folha', 'Folha DTF', 'irFolhaDtf()'], ['seri', 'Serigrafia', 'irSerigrafia()']].map(function (t) {
+    return '<button class="chip' + (t[0] === atual ? ' on' : '') + '" onclick="' + t[2] + '">' + t[1] + '</button>';
+  }).join('') + '</div>';
+}
+
+// ---------------- v31: calculadora de serigrafia ----------------
+var SERI = { qtd: 50, escuro: false, pos: [{ nome: 'Frente', cores: 1, tam: 'A4', guardado: false, quadro: '', margem: '', pv: '' }], voltar: null, cli: null,
+             p: { prep: 15, acerto: 10, tinta: 0.08, mo: 0.25, cura: 0.05, margem: 60, min: 1 } };
+try { var _s = JSON.parse(localStorage.getItem('inovastamp_seri') || 'null'); if (_s) Object.keys(SERI.p).forEach(function (k) { if (_s[k] !== undefined) SERI.p[k] = _s[k]; }); } catch (e) {}
+function guardarSeri() { try { localStorage.setItem('inovastamp_seri', JSON.stringify(SERI.p)); } catch (e) {} }
+var SERI_TAM = [['Pequeno', 'Pequeno (até 12 cm)', 0.5], ['A4', 'A4 (até 30 cm)', 1], ['A3', 'A3 (até 42 cm)', 1.8]];
+function seriPosNova(nome) { return { nome: nome || 'Frente', cores: 1, tam: 'A4', guardado: false, quadro: '', margem: '', pv: '' }; }
+function seriCalc(qtd) {
+  var P = SERI.p, n = SERI.pos.length || 1, custo = 0, pvT = 0;
+  var pos = SERI.pos.map(function (ps) {
+    var f = (SERI_TAM.filter(function (t) { return t[0] === ps.tam; })[0] || [0, 0, 1])[2];
+    var cores = Math.max(1, Number(ps.cores) || 1) + (SERI.escuro ? 1 : 0);
+    var setup = (ps.guardado ? 0 : cores * P.prep) + P.acerto / n;
+    var varPc = cores * (P.tinta * f + P.mo) + P.cura;
+    var c = setup / qtd + varPc, m = ps.margem === '' || ps.margem == null ? Number(P.margem) : Number(ps.margem);
+    var pv = Math.round(Math.max(Number(P.min) || 0, c * (1 + m / 100)) * 100) / 100;
+    custo += c; pvT += pv;
+    return { cores: cores, setup: setup, varPc: varPc, custo: c, margem: m, pv: pv };
+  });
+  return { pos: pos, custo: custo, pv: Math.round(pvT * 100) / 100 };
+}
+function irSerigrafia() { navOn('n-maq'); $('titulo').textContent = 'Serigrafia'; desenharSeri(); }
+function seriCampo(i, k, v) { if (i === null) SERI[k] = v; else SERI.pos[i][k] = v; desenharSeri(); }
+function seriParam(k, v) { SERI.p[k] = Number(v) || 0; guardarSeri(); desenharSeri(); }
+function desenharSeri() {
+  var qtd = Math.max(1, Number(SERI.qtd) || 1), r = seriCalc(qtd), P = SERI.p;
+  var h = sepMaq('seri') + (SERI.voltar ? '<div class="card mut">Para o artigo ' + (SERI.voltar.i + 1) + ' do orçamento' + (ED && ED.numero ? ' ' + esc(ED.numero) : '') +
+    (SERI.cli ? ' · ' + esc(SERI.cli.cliente) : '') + '.</div>' : '') +
+    '<div class="card"><div class="g2"><div><label>Quantidade de peças</label><input type="number" min="1" inputmode="numeric" value="' + SERI.qtd + '" onchange="seriCampo(null,\'qtd\',Number(this.value)||1)"></div>' +
+    '<div><label>&nbsp;</label><label style="display:flex;gap:8px;align-items:center;margin:0;padding:9px 0;color:var(--txt);font-size:14px"><input type="checkbox" style="width:auto" ' + (SERI.escuro ? 'checked ' : '') +
+    'onchange="seriCampo(null,\'escuro\',this.checked)"> Peça escura (base branca)</label></div></div></div>';
+  SERI.pos.forEach(function (ps, i) {
+    var x = r.pos[i];
+    h += '<div class="card"><div class="row"><b class="sp">Posição ' + (i + 1) + (SERI.voltar ? ' <span class="mut">(personalização ' + (i + 1) + ')</span>' : '') + '</b>' +
+      (SERI.pos.length > 1 ? '<button class="x" onclick="SERI.pos.splice(' + i + ',1);desenharSeri()">✕</button>' : '') + '</div>' +
+      '<div class="g3"><div><label>Onde</label><select onchange="seriCampo(' + i + ',\'nome\',this.value)">' + opts(['Frente', 'Costas', 'Peito', 'Manga', 'Outra'], ps.nome) + '</select></div>' +
+      '<div><label>Nº de cores</label><input type="number" min="1" max="8" value="' + ps.cores + '" onchange="seriCampo(' + i + ',\'cores\',Number(this.value)||1)"></div>' +
+      '<div><label>Tamanho</label><select onchange="seriCampo(' + i + ',\'tam\',this.value)">' + opts(SERI_TAM.map(function (t) { return [t[0], t[1]]; }), ps.tam) + '</select></div></div>' +
+      '<label style="display:flex;gap:8px;align-items:center;color:var(--txt);font-size:14px"><input type="checkbox" style="width:auto" ' + (ps.guardado ? 'checked ' : '') +
+      'onchange="seriCampo(' + i + ',\'guardado\',this.checked)"> Quadros já guardados (repetição: sem custo de quadros)' + (ps.quadro && ps.guardado ? ' · ' + esc(ps.quadro) : '') + '</label>' +
+      '<div class="g2"><div><label>Margem % <span class="mut">(vazio = ' + P.margem + '%)</span></label><input type="number" step="5" value="' + esc(ps.margem) +
+      '" onchange="seriCampo(' + i + ',\'margem\',this.value===\'\'?\'\':Number(this.value))"></div>' +
+      '<div><label>Preço final €/pç <span class="mut">(opcional)</span></label><input type="number" step="0.05" value="' + esc(ps.pv) + '" placeholder="' + x.pv.toFixed(2) +
+      '" onchange="seriCampo(' + i + ',\'pv\',this.value===\'\'?\'\':Number(this.value))"></div></div>' +
+      '<div class="tot mut"><span>Quadros + acerto (' + x.cores + ' cor' + (x.cores > 1 ? 'es' : '') + ', uma vez)</span><span class="num">' + eur(x.setup) + '</span></div>' +
+      '<div class="tot mut"><span>Tinta + mão de obra por peça</span><span class="num">' + eur(x.varPc) + '</span></div>' +
+      '<div class="tot"><span>Custo por peça (' + qtd + ' pç)</span><span class="num">' + eur(x.custo) + '</span></div>' +
+      '<div class="tot big"><span>Preço por peça' + (ps.pv !== '' ? ' (ajustado)' : '') + '</span><span class="num">' + eur(ps.pv !== '' ? ps.pv : x.pv) +
+      ' <span class="mut">c/IVA ' + eur(Math.round((ps.pv !== '' ? ps.pv : x.pv) * 1.23 * 100) / 100) + '</span></span></div></div>';
+  });
+  var fin = SERI.pos.map(function (ps, i) { return ps.pv !== '' ? Number(ps.pv) : r.pos[i].pv; });
+  h += '<div class="acts"><button class="btn sec" onclick="SERI.pos.push(seriPosNova(\'Costas\'));desenharSeri()"' + (SERI.pos.length >= 2 ? ' disabled' : '') + '>＋ Outra posição</button>' +
+    (SERI.cli ? '<button class="btn sec" onclick="seriQuadros()">Quadros do cliente</button>' : '') + '</div><div id="seriQZona"></div>';
+  if (SERI.voltar) h += '<div class="acts"><button class="btn ok" onclick="seriUsar()">Usar no artigo ' + (SERI.voltar.i + 1) + ': ' + fin.map(eur).join(' + ') + ' /pç</button></div>' +
+    '<div class="mut">O preço fica no campo "Pers. €/pç" do artigo — podes sempre alterá-lo lá.</div>';
+  h += '<h2>Por quantidade</h2><div class="card"><table class="sim"><tr><th>Qtd</th><th>Custo/pç</th><th>Preço/pç</th><th>c/IVA</th><th>Total s/IVA</th></tr>' +
+    [10, 25, 50, 100, 250, 500].concat([qtd]).filter(function (q, i, a) { return a.indexOf(q) === i; }).sort(function (a, b) { return a - b; }).map(function (q) {
+      var y = seriCalc(q);
+      return '<tr' + (q === qtd ? ' style="font-weight:700"' : '') + '><td>' + q + '</td><td>' + eur(y.custo) + '</td><td>' + eur(y.pv) + '</td><td>' + eur(Math.round(y.pv * 1.23 * 100) / 100) + '</td><td>' + eur(Math.round(y.pv * q * 100) / 100) + '</td></tr>';
+    }).join('') + '</table><div class="mut">Soma das posições, com a margem de cada uma (sem o preço final ajustado).</div></div>';
+  h += '<details class="card"><summary>Custos e margem (ficam guardados neste telemóvel)</summary><div class="g2">' +
+    [['prep', 'Quadro + fotolito por cor €', 0.5], ['acerto', 'Acerto e limpeza por trabalho €', 0.5], ['tinta', 'Tinta por cor por peça (A4) €', 0.01], ['mo', 'Mão de obra por cor por peça €', 0.05],
+     ['cura', 'Secagem / cura por peça €', 0.01], ['margem', 'Margem por defeito %', 5], ['min', 'Preço mínimo por posição €', 0.1]].map(function (c) {
+      return '<div><label>' + c[1] + '</label><input type="number" step="' + c[2] + '" value="' + P[c[0]] + '" onchange="seriParam(\'' + c[0] + '\',this.value)"></div>';
+    }).join('') + '</div><div class="mut">Valores iniciais de exemplo — põe os teus custos reais. Pequeno gasta metade da tinta de um A4; A3 quase o dobro. Peça escura soma uma cor (base branca).</div></details>';
+  $('main').innerHTML = h;
+}
+function seriDaLinha(i) {
+  lerCampos();
+  var l = ED.linhas[i], pos = [];
+  [l.pers1, l.pers2].forEach(function (p) {
+    if (!p || p === 'Sem personalização') return;
+    var ps = seriPosNova(/costas/i.test(p) ? 'Costas' : /manga/i.test(p) ? 'Manga' : /peito/i.test(p) ? 'Peito' : 'Frente');
+    ps.tam = /A3/i.test(p) ? 'A3' : /manga|peito|pequeno/i.test(p) ? 'Pequeno' : 'A4';
+    var ant = SERI.pos[pos.length]; if (ant) { ps.cores = ant.cores; }
+    pos.push(ps);
+  });
+  SERI.pos = pos.length ? pos : [seriPosNova('Frente')];
+  SERI.voltar = { i: i }; SERI.qtd = Number(l.qtd) || 1;
+  SERI.cli = ED.cliente ? { cliente: ED.cliente, nif: ED.nif } : null;
+  irSerigrafia();
+}
+function seriUsar() {
+  var v = SERI.voltar; if (!v || !ED || !ED.linhas[v.i]) return;
+  var r = seriCalc(Math.max(1, Number(SERI.qtd) || 1)), l = ED.linhas[v.i];
+  SERI.pos.forEach(function (ps, k) {
+    var slot = k + 1, pv = ps.pv !== '' ? Number(ps.pv) : r.pos[k].pv;
+    var nome = ps.nome === 'Manga' ? 'Estamparia – Manga' : ps.tam === 'A3' ? 'Estamparia – A3' : 'Estamparia – A4';
+    if ((!l['pers' + slot] || l['pers' + slot] === 'Sem personalização') && D.pers.indexOf(nome) >= 0) l['pers' + slot] = nome;
+    l['precoAj' + slot] = Math.round(pv * 100) / 100;
+  });
+  SERI.voltar = null; CALC = null; desenharEditor();
+  msg('Preço da serigrafia posto no artigo ' + (v.i + 1) + ' (podes alterá-lo em "Pers. €/pç"). Carrega em Calcular.');
+}
+function seriQuadros() {
+  call('apiQuadros', SERI.cli.cliente, SERI.cli.nif || '').then(function (l) {
+    l = l.filter(function (q) { return q.estado === 'Guardado'; });
+    $('seriQZona').innerHTML = '<div class="card">' + (l.length ? l.map(function (q) {
+      return '<div class="lin"><div class="b">' + esc(q.num) + ' · ' + esc(q.desenho || '—') + '</div><div class="mut">' + esc(q.pos) + ' · ' + (q.cores || '?') + ' cor(es)' + (q.tintas ? ' · ' + esc(q.tintas) : '') +
+        (q.local ? ' · 📍 ' + esc(q.local) : '') + '</div><div class="acts" style="margin-top:4px">' + SERI.pos.map(function (ps, i) {
+          return '<button class="btn lite" onclick="seriUsarQuadro(' + i + ',' + js(q.num) + ',' + (q.cores || 0) + ')">Usar na posição ' + (i + 1) + '</button>';
+        }).join('') + '</div></div>';
+    }).join('') : '<div class="mut">Este cliente não tem quadros guardados.</div>') + '</div>';
+  });
+}
+function seriUsarQuadro(i, num, cores) { var ps = SERI.pos[i]; ps.guardado = true; ps.quadro = num; if (cores) ps.cores = cores; desenharSeri(); msg('Quadro ' + num + ' na posição ' + (i + 1) + ': sem custo de quadros.'); }
+
+// ---------------- v31: folha DTF com vários trabalhos ----------------
+var FD = { itens: [], dpi: 150, res: null };
+function irFolhaDtf() { navOn('n-maq'); $('titulo').textContent = 'Folha DTF'; desenharFolha(); }
+function fdNovo(im, nome, wcm, qtd, orc) {
+  var w = Number(wcm) || 10;
+  FD.itens.push({ im: im, nome: nome || 'Desenho', w: Math.round(w * 10) / 10, h: Math.round(w * im.height / im.width * 10) / 10, qtd: Number(qtd) || 1, orc: orc || '', margem: '', pv: '' });
+  desenharFolha();
+}
+function fdImagem(inp) { mqLerImagem(inp, function (im, src, nome) { fdNovo(im, String(nome || 'Desenho').replace(/\.\w+$/, ''), 10, 1, ''); }); }
+function fdDaMaquete() {
+  var n = 0;
+  ['F', 'C'].forEach(function (k) {
+    var L = MQ.L[k]; if (!L.des || (MQ.modo === 'foto' && k === 'C')) return;
+    fdNovo(L.des, (MQ.cli && MQ.cli.nome ? MQ.cli.nome + ' · ' : '') + (k === 'F' ? 'frente' : 'costas'), L.wcm, DTF.qtd || 1, MQ.orc || ''); n++;
+  });
+  if (!n) msg('A maquete ainda não tem desenho.', true);
+}
+function fdCampo(i, k, v) {
+  var it = FD.itens[i];
+  if (k === 'w') { it.w = Number(v) || 1; it.h = Math.round(it.w * it.im.height / it.im.width * 10) / 10; }
+  else if (k === 'h') { it.h = Number(v) || 1; it.w = Math.round(it.h * it.im.width / it.im.height * 10) / 10; }
+  else it[k] = v;
+  desenharFolha();
+}
+// arrumação em filas (maior altura primeiro); experimenta com e sem rodar e fica com a mais curta
+function fdArrumar() {
+  var W = Number(DTF.rolo) || 55, g = Number(DTF.gap) || 0, pcs = [];
+  FD.itens.forEach(function (it, k) { for (var j = 0; j < (Number(it.qtd) || 0); j++) pcs.push({ k: k, w: Number(it.w) || 0, h: Number(it.h) || 0 }); });
+  if (!pcs.length) return null;
+  function pack(rodar) {
+    var ps = pcs.map(function (p) {
+      var w = p.w, h = p.h, r = false;
+      if ((w > W && h <= W) || (rodar && h > w && h <= W)) { w = p.h; h = p.w; r = true; }
+      return { k: p.k, w: w, h: h, r: r };
+    });
+    if (ps.some(function (p) { return p.w > W + 1e-9; })) return null;
+    ps.sort(function (a, b) { return (b.h - a.h) || (b.w - a.w); });
+    var prat = [], y = 0;
+    ps.forEach(function (p) {
+      var s = null;
+      for (var i = 0; i < prat.length; i++) if (p.h <= prat[i].h + 1e-9 && prat[i].x + p.w <= W + 1e-9) { s = prat[i]; break; }
+      if (!s) { s = { y: y, h: p.h, x: 0 }; prat.push(s); y += p.h + g; }
+      p.x = s.x; p.y = s.y; s.x += p.w + g;
+    });
+    return { ps: ps, prat: prat, comp: Math.max(0, y - g) };
+  }
+  var a = pack(false), b = pack(true);
+  return !a ? b : !b ? a : (b.comp < a.comp ? b : a);
+}
+function fdCustos(res) {
+  var g = Number(DTF.gap) || 0, area = FD.itens.map(function () { return 0; }), tot = 0;
+  res.ps.forEach(function (p) { var a = (p.w + g) * (p.h + g); area[p.k] += a; tot += a; });
+  var m = res.comp / 100, mCob = DTF.inteiros ? Math.ceil(m) : m, filme = mCob * DTF.preco;
+  return { m: m, mCob: mCob, filme: filme, itens: FD.itens.map(function (it, k) {
+    var q = Number(it.qtd) || 0; if (!q || !tot) return null;
+    var custo = filme * (area[k] / tot) / q + Number(DTF.aplic || 0), mg = it.margem === '' ? Number(DTF.margem) : Number(it.margem);
+    var pv = Math.round(Math.max(1, custo * (1 + mg / 100)) * 100) / 100;
+    return { custo: custo, margem: mg, pvCalc: pv, pv: it.pv !== '' ? Number(it.pv) : pv };
+  }) };
+}
+function desenharFolha() {
+  var res = fdArrumar(); FD.res = res;
+  var h = sepMaq('folha') + '<div class="card"><div class="mut">Junta desenhos de vários trabalhos na mesma folha de ' + DTF.rolo + ' cm para gastar menos filme. ' +
+    'Preço por metro (' + eur(DTF.preco) + '), largura, espaço e margem por defeito vêm dos parâmetros do DTF (Maquete › Custo do DTF).</div>' +
+    '<div class="acts"><label class="btn" style="text-align:center;margin:0;color:#fff">＋ Desenho<input type="file" accept="image/*" style="display:none" onchange="fdImagem(this)"></label>' +
+    '<button class="btn sec" onclick="fdDaMaquete()">＋ Da maquete atual</button></div></div>';
+  h += FD.itens.map(function (it, i) {
+    return '<div class="card"><div class="row"><img src="' + esc(it.im.src) + '" style="width:48px;height:48px;object-fit:contain;background:#eef1f6;border-radius:6px">' +
+      '<input class="sp" value="' + esc(it.nome) + '" onchange="FD.itens[' + i + '].nome=this.value"><button class="x" onclick="FD.itens.splice(' + i + ',1);desenharFolha()">✕</button></div>' +
+      '<div class="g4"><div><label>L (cm)</label><input type="number" step="0.5" value="' + it.w + '" onchange="fdCampo(' + i + ',\'w\',this.value)"></div>' +
+      '<div><label>A (cm)</label><input type="number" step="0.5" value="' + it.h + '" onchange="fdCampo(' + i + ',\'h\',this.value)"></div>' +
+      '<div><label>Qtd</label><input type="number" min="0" value="' + it.qtd + '" onchange="fdCampo(' + i + ',\'qtd\',Number(this.value)||0)"></div>' +
+      '<div><label>Orçamento</label><input value="' + esc(it.orc) + '" placeholder="ORC-…" autocapitalize="characters" onchange="FD.itens[' + i + '].orc=this.value.toUpperCase()"></div></div></div>';
+  }).join('');
+  if (!FD.itens.length) h += '<div class="vazio">Adiciona os desenhos de cada trabalho (com o tamanho real e a quantidade).</div>';
+  else if (!res) h += '<div class="card alerta">Há um desenho que não cabe na largura do rolo (' + DTF.rolo + ' cm).</div>';
+  else {
+    var c = fdCustos(res);
+    h += '<h2>Folha</h2><div class="card"><canvas id="fdCv" class="cv" style="background:#eef1f6"></canvas>' +
+      '<div class="tot" style="margin-top:8px"><span>Comprimento</span><span class="num">' + fmtCm(res.comp) + ' cm' + (DTF.inteiros ? ' → ' + c.mCob + ' m' : '') + '</span></div>' +
+      '<div class="tot"><span>Peças na folha</span><span class="num">' + res.ps.length + '</span></div>' +
+      '<div class="tot big"><span>Custo do filme</span><span class="num">' + eur(c.filme) + '</span></div>' +
+      '<div class="mut">O custo é repartido pelos trabalhos conforme a área que cada um ocupa' + (Number(DTF.aplic) ? '; soma ' + eur(DTF.aplic) + '/pç de aplicação' : '') + '.</div></div>';
+    h += '<h2>Preço por trabalho</h2><div class="card">' + FD.itens.map(function (it, i) {
+      var x = c.itens[i]; if (!x) return '';
+      return '<div class="lin"><div class="b">' + esc(it.nome) + (it.orc ? ' <span class="mut">' + esc(it.orc) + '</span>' : '') + '</div>' +
+        '<div class="mut num">' + it.qtd + ' pç · custo ' + eur(x.custo) + '/pç</div><div class="g2">' +
+        '<div><label>Margem % <span class="mut">(vazio = ' + DTF.margem + '%)</span></label><input type="number" step="5" value="' + esc(it.margem) + '" onchange="fdCampo(' + i + ',\'margem\',this.value===\'\'?\'\':Number(this.value))"></div>' +
+        '<div><label>Preço €/pç</label><input type="number" step="0.05" value="' + esc(it.pv) + '" placeholder="' + x.pvCalc.toFixed(2) + '" onchange="fdCampo(' + i + ',\'pv\',this.value===\'\'?\'\':Number(this.value))"></div></div>' +
+        '<div class="tot"><span>Preço DTF por peça</span><span class="num b">' + eur(x.pv) + ' <span class="mut">c/IVA ' + eur(Math.round(x.pv * 1.23 * 100) / 100) + '</span></span></div></div>';
+    }).join('') + '<div class="mut">Põe o preço no orçamento em "Pers. €/pç" do artigo.</div></div>';
+    h += '<h2>Ficheiro para imprimir</h2><div class="card"><div class="g2"><div><label>Resolução</label><select onchange="FD.dpi=Number(this.value)">' +
+      opts([['100', '100 dpi'], ['150', '150 dpi'], ['200', '200 dpi'], ['300', '300 dpi']], String(FD.dpi)) + '</select></div><div><label>&nbsp;</label><button class="btn sec" style="width:100%" onclick="fdExportar()">⬇ Descarregar PNG</button></div></div>' +
+      '<div class="mut">PNG com fundo transparente, ao tamanho real (' + DTF.rolo + ' cm de largura). Folhas longas saem em partes. Confirma no programa de impressão que a largura fica em ' + DTF.rolo + ' cm.</div></div>';
+  }
+  $('main').innerHTML = h;
+  fdPreview();
+}
+function fdPeca(x, p, s, y0) {
+  var im = FD.itens[p.k].im, px = p.x * s, py = (p.y - y0) * s, w = p.w * s, hh = p.h * s;
+  x.save();
+  if (p.r) { x.translate(px + w, py); x.rotate(Math.PI / 2); x.drawImage(im, 0, 0, hh, w); } else x.drawImage(im, px, py, w, hh);
+  x.restore();
+}
+function fdPreview() {
+  var cv = $('fdCv'), res = FD.res; if (!cv || !res) return;
+  var W = Number(DTF.rolo) || 55, larg = cv.parentNode.clientWidth - 28 || 300, s = Math.min(larg / W, 2400 / Math.max(res.comp, 1));
+  cv.width = Math.round(W * s); cv.height = Math.max(20, Math.round(res.comp * s)); cv.style.width = cv.width + 'px';
+  var x = cv.getContext('2d');
+  res.ps.forEach(function (p) { x.strokeStyle = '#c3cad8'; x.strokeRect(p.x * s + 0.5, p.y * s + 0.5, p.w * s - 1, p.h * s - 1); fdPeca(x, p, s, 0); });
+  x.strokeStyle = '#C0392B'; x.fillStyle = '#C0392B'; x.font = '11px Arial'; x.setLineDash([6, 4]);
+  for (var m = 100; m < res.comp; m += 100) { var y = m * s; x.beginPath(); x.moveTo(0, y); x.lineTo(cv.width, y); x.stroke(); x.fillText(m / 100 + ' m', 4, y - 3); }
+  x.setLineDash([]);
+}
+function fdExportar() {
+  var res = FD.res; if (!res) return;
+  var ppc = FD.dpi / 2.54, Wpx = Math.round(DTF.rolo * ppc), maxCm = Math.min(100, Math.floor(16000000 / Wpx) / ppc), segs = [], cur = null;
+  res.prat.forEach(function (s) {
+    if (!cur || s.y + s.h - cur.y0 > maxCm) { cur = { y0: s.y, y1: s.y + s.h }; segs.push(cur); } else cur.y1 = s.y + s.h;
+  });
+  if (segs.some(function (g) { return g.y1 - g.y0 > maxCm + 1e-6; })) { msg('A ' + FD.dpi + ' dpi há uma fila demasiado alta para o telemóvel. Escolhe menos dpi.', true); return; }
+  segs.forEach(function (sg, n) {
+    setTimeout(function () {
+      var c = document.createElement('canvas'); c.width = Wpx; c.height = Math.round((sg.y1 - sg.y0) * ppc);
+      var x = c.getContext('2d');
+      res.ps.forEach(function (p) { if (p.y >= sg.y0 - 1e-6 && p.y < sg.y1 - 1e-6) fdPeca(x, p, ppc, sg.y0); });
+      c.toBlob(function (b) {
+        var a = document.createElement('a'); a.href = URL.createObjectURL(b);
+        a.download = 'Folha DTF ' + (n + 1) + ' de ' + segs.length + ' - ' + DTF.rolo + 'x' + Math.ceil(sg.y1 - sg.y0) + ' cm ' + FD.dpi + 'dpi.png';
+        document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(a.href); }, 60000);
+      }, 'image/png');
+    }, n * 1500);
+  });
+  msg(segs.length + ' ficheiro(s) PNG a ' + FD.dpi + ' dpi.');
+}
+
+// ---------------- v31: ficha do cliente — repetir último trabalho ----------------
+function repetirUltimo() {
+  var o = (FICHA.orcs || []).filter(function (x) { return ['Aceite', 'Em produção', 'Faturado'].indexOf(x.estado) >= 0; })[0];
+  if (!o) { msg('Este cliente ainda não tem trabalhos aceites.', true); return; }
+  call('apiAbrir', o.num).then(function (r) {
+    ATUAL = r; duplicar();
+    msg('Repetição de ' + o.num + '. Confirma quantidades, tamanhos e preços, carrega em Calcular e Guardar. Os logótipos e os quadros do cliente continuam guardados.');
+  });
+}
+function cliPorNome(nome, nif) {
+  var n = String(nif || '').replace(/\D/g, ''), nm = String(nome || '').trim().toLowerCase();
+  return D.clientes.filter(function (c) { return (n && n !== '999999990' && c[1].replace(/\D/g, '') === n) || c[0].trim().toLowerCase() === nm; })[0] || null;
+}
+function mesmoCli(x, c) {
+  var n = String(c.nif || '').replace(/\D/g, '');
+  return n && n !== '999999990' ? String(x.nif || '').replace(/\D/g, '') === n : String(x.cliente).trim().toLowerCase() === String(c.cliente).trim().toLowerCase();
+}
+
+// ---------------- v31: arquivo de quadros de serigrafia ----------------
+var QDS = null, QCLI = null, QBUSCA = '';
+function irQuadros(cli) {
+  QCLI = cli && cli.cliente ? { cliente: cli.cliente, nif: cli.nif || '' } : null;
+  navOn('n-res'); $('titulo').textContent = 'Quadros de serigrafia';
+  call('apiQuadros', QCLI ? QCLI.cliente : '', QCLI ? QCLI.nif : '').then(function (l) { QDS = l; desenharQuadros(); });
+}
+function desenharQuadros() {
+  var h = (QCLI ? '<div class="mut" style="margin:0 2px 8px">Cliente: <b>' + esc(QCLI.cliente) + '</b> · <a href="#" onclick="irQuadros();return false">ver todos</a></div>'
+    : '<input placeholder="Procurar cliente, desenho, local ou nº…" value="' + esc(QBUSCA) + '" oninput="QBUSCA=this.value;itensQuadros()"><div style="height:6px"></div>') +
+    '<div class="acts"><button class="btn" onclick="formQuadro()">＋ Registar quadro</button></div><div id="qForm"></div><div id="qItens"></div>' +
+    '<div class="mut" style="margin:8px 2px">Regista os quadros que guardas depois de um trabalho. Numa repetição, a calculadora de serigrafia não cobra quadros.</div>';
+  $('main').innerHTML = h; itensQuadros();
+}
+function itensQuadros() {
+  var q = norm(QBUSCA), l = QDS.filter(function (x) { return QCLI || !q || norm(x.num + ' ' + x.cliente + ' ' + x.desenho + ' ' + x.local + ' ' + x.orc).indexOf(q) >= 0; });
+  $('qItens').innerHTML = l.length ? '<div class="card">' + l.map(function (x) {
+    return '<div class="lin" onclick="formQuadro(' + QDS.indexOf(x) + ')"><div class="row"><div class="sp"><div class="b">' + esc(x.num) + ' · ' + esc(x.desenho || '—') + '</div><div class="mut">' + esc(x.cliente) +
+      (x.pos ? ' · ' + esc(x.pos) : '') + ' · ' + (x.cores || '?') + ' cor(es)' + (x.tintas ? ' (' + esc(x.tintas) + ')' : '') + (x.tam ? ' · ' + esc(x.tam) : '') + (x.local ? ' · 📍 ' + esc(x.local) : '') + '</div></div>' +
+      '<span class="tag ' + (x.estado === 'Guardado' ? 't-Aceite' : 't-Rascunho') + '">' + (x.estado === 'Guardado' ? 'Guardado' : 'Limpo') + '</span></div></div>';
+  }).join('') + '</div>' : '<div class="vazio">Sem quadros registados.</div>';
+}
+function formQuadro(k) {
+  var x = k === undefined ? { num: '', cliente: QCLI ? QCLI.cliente : '', nif: QCLI ? QCLI.nif : '', desenho: '', pos: 'Frente', cores: 1, tintas: '', tam: '', malha: '', local: '',
+    orc: ATUAL && QCLI && ATUAL.cliente === QCLI.cliente ? ATUAL.num : '', estado: 'Guardado', notas: '' } : QDS[k];
+  $('qForm').innerHTML = '<div class="card"><div class="b">' + (x.num ? 'Quadro ' + esc(x.num) : 'Novo quadro') + '</div>' +
+    '<label>Cliente</label><input id="qCli" list="dlQCli" value="' + esc(x.cliente) + '"><datalist id="dlQCli">' + D.clientes.map(function (c) { return '<option value="' + esc(c[0]) + '">'; }).join('') + '</datalist>' +
+    '<label>Desenho</label><input id="qDes" value="' + esc(x.desenho) + '" placeholder="ex.: logótipo frente">' +
+    '<div class="g3"><div><label>Posição</label><select id="qPos">' + opts(['Frente', 'Costas', 'Peito', 'Manga', 'Outra'], x.pos) + '</select></div>' +
+    '<div><label>Nº cores</label><input id="qCor" type="number" min="1" value="' + esc(x.cores) + '"></div><div><label>Tamanho</label><input id="qTam" value="' + esc(x.tam) + '" placeholder="28×20 cm"></div></div>' +
+    '<label>Cores / tintas</label><input id="qTin" value="' + esc(x.tintas) + '" placeholder="ex.: branco + Pantone 286 C">' +
+    '<div class="g3"><div><label>Malha</label><input id="qMal" value="' + esc(x.malha) + '" placeholder="43T"></div><div><label>Localização</label><input id="qLoc" value="' + esc(x.local) + '" placeholder="Prateleira B2"></div>' +
+    '<div><label>Orçamento</label><input id="qOrc" value="' + esc(x.orc) + '" autocapitalize="characters"></div></div>' +
+    (x.num ? '<label>Estado</label><select id="qEst">' + opts(['Guardado', 'Limpo (já não existe)'], x.estado) + '</select>' : '') +
+    '<label>Notas</label><input id="qNot" value="' + esc(x.notas) + '">' +
+    '<div class="acts"><button class="btn ok" onclick="guardarQuadro(' + js(x.num) + ')">Guardar</button><button class="btn sec" onclick="$(\'qForm\').innerHTML=\'\'">Cancelar</button></div></div>';
+  window.scrollTo(0, 0);
+}
+function guardarQuadro(num) {
+  var cli = $('qCli').value.trim(); if (!cli) { msg('Indica o cliente.', true); return; }
+  var c = cliPorNome(cli, QCLI && QCLI.cliente === cli ? QCLI.nif : '');
+  call('apiQuadroGuardar', { num: num, cliente: cli, nif: c ? c[1] : (QCLI && QCLI.cliente === cli ? QCLI.nif : ''), desenho: $('qDes').value, pos: $('qPos').value, cores: $('qCor').value,
+    tam: $('qTam').value, tintas: $('qTin').value, malha: $('qMal').value, local: $('qLoc').value, orc: $('qOrc').value, estado: $('qEst') ? $('qEst').value : 'Guardado', notas: $('qNot').value })
+    .then(function (r) { msg('Quadro ' + r.num + ' guardado.'); irQuadros(QCLI); });
+}
+
+// ---------------- v31: empréstimos de amostras / kits de tamanhos ----------------
+var EMPS = null, ECLI = null, EN2 = null;
+function isoLocal(d) { return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+function irEmprestimos(cli) {
+  ECLI = cli && cli.cliente ? { cliente: cli.cliente, nif: cli.nif || '' } : null;
+  navOn('n-res'); $('titulo').textContent = 'Empréstimos de amostras';
+  var go = function () { call('apiEmprestimos').then(function (r) { EMPS = r; desenharEmps(); }); };
+  if (!TAMS) call('apiTamanhos').then(function (t) { TAMS = t; go(); }); else go();
+}
+function gruposEmp() {
+  var g = {}, ord = [];
+  EMPS.lista.forEach(function (e) {
+    if (ECLI && !mesmoCli(e, ECLI)) return;
+    if (!g[e.id]) { g[e.id] = { id: e.id, data: e.data, cliente: e.cliente, nif: e.nif, devolver: e.devolver, notas: e.notas, itens: [] }; ord.push(e.id); }
+    g[e.id].itens.push(e);
+  });
+  return ord.map(function (k) { var x = g[k]; x.aberto = x.itens.some(function (i) { return i.estado === 'Emprestado'; }); x.atrasado = x.aberto && x.devolver && x.devolver < EMPS.hoje; return x; })
+    .sort(function (a, b) { return (b.aberto - a.aberto) || (a.id < b.id ? 1 : -1); });
+}
+function desenharEmps() {
+  var gs = gruposEmp(), ab = gs.filter(function (g) { return g.aberto; }), fe = gs.filter(function (g) { return !g.aberto; }).slice(0, 15);
+  var h = (ECLI ? '<div class="mut" style="margin:0 2px 8px">Cliente: <b>' + esc(ECLI.cliente) + '</b> · <a href="#" onclick="irEmprestimos();return false">ver todos</a></div>' : '') +
+    '<div class="acts"><button class="btn" onclick="novoEmp()">＋ Novo empréstimo</button></div><div id="empForm"></div>' +
+    '<h2>Por devolver (' + ab.length + ')</h2>' + (ab.length ? ab.map(cardEmp).join('') : '<div class="mut" style="margin:0 2px 8px">Nada emprestado.</div>') +
+    (fe.length ? '<h2>Fechados</h2>' + fe.map(cardEmp).join('') : '') +
+    '<div class="mut" style="margin:8px 2px">Enquanto estão emprestadas, as peças saem do stock (aba Consumo Stock). "Devolvido" volta a pô-las no stock; "Ficou" deixa-as fora.</div>';
+  $('main').innerHTML = h;
+}
+function cardEmp(g) {
+  var dias = g.devolver ? Math.round((new Date(g.devolver + 'T00:00:00') - new Date(EMPS.hoje + 'T00:00:00')) / 86400000) : null, id = js(g.id);
+  return '<div class="card"><div class="row"><div class="sp"><div class="b">' + esc(g.cliente) + '</div><div class="mut">' + esc(g.id) + ' · ' + dt(g.data) + (g.devolver ? ' · devolver até ' + dt(g.devolver) : '') + '</div>' +
+    (g.aberto && dias !== null && dias < 0 ? '<div class="alerta">Atrasado ' + (-dias) + ' dia(s)</div>' : '') + '</div>' +
+    '<span class="tag ' + (g.aberto ? 't-Emprodução">Emprestado' : 't-Aceite">Fechado') + '</span></div>' +
+    g.itens.map(function (i) {
+      return '<div class="lin row"><div class="sp"><div>' + esc(nomeCurto(i.produto)) + '</div><div class="mut">' + esc(i.cor || 'sem cor') + (i.tam ? ' · ' + esc(i.tam) : '') + ' · ' + i.qtd + ' pç · ' +
+        esc(i.estado) + (i.fecho && i.estado !== 'Emprestado' ? ' ' + dt(i.fecho) : '') + '</div></div>' +
+        (i.estado === 'Emprestado' ? '<button class="btn lite" onclick="empItem(' + id + ',' + i.item + ',\'Devolvido\')">Devolvido</button><button class="btn lite" onclick="empItem(' + id + ',' + i.item + ',\'Ficou com o cliente\')">Ficou</button>'
+          : '<button class="btn lite" onclick="empItem(' + id + ',' + i.item + ',\'Emprestado\')">Desfazer</button>') + '</div>';
+    }).join('') + (g.notas ? '<div class="mut">' + esc(g.notas) + '</div>' : '') +
+    (g.aberto ? '<div class="acts"><button class="btn sec" onclick="empItem(' + id + ',0,\'Devolvido\')">Tudo devolvido</button><button class="btn wa" onclick="empLembrar(' + id + ')">Lembrar o cliente</button></div>' : '') + '</div>';
+}
+function empItem(id, item, estado) {
+  if (estado === 'Ficou com o cliente' && !confirm('Esta peça fica com o cliente (continua fora do stock)?')) return;
+  if (!item && !confirm('Marcar todas as peças de ' + id + ' como devolvidas?')) return;
+  call('apiEmprestimoItem', id, item, estado).then(function (r) { EMPS = { lista: r.lista, hoje: r.hoje }; STOCK = null; msg(id + ': ' + estado + (r.mudados > 1 ? ' (' + r.mudados + ' linhas)' : '')); desenharEmps(); });
+}
+function empLembrar(id) {
+  var g = gruposEmp().filter(function (x) { return x.id === id; })[0]; if (!g) return;
+  var c = cliPorNome(g.cliente, g.nif), tel = c ? c[3] : '';
+  var pecas = g.itens.filter(function (i) { return i.estado === 'Emprestado'; }).map(function (i) { return '• ' + nomeCurto(i.produto) + (i.tam ? ' ' + i.tam : '') + (i.qtd > 1 ? ' ×' + i.qtd : ''); }).join('\n');
+  var t = 'Bom dia ' + g.cliente + ',\n\nRelembramos que estão convosco as seguintes amostras, emprestadas a ' + dt(g.data) + (g.devolver ? ' (devolução prevista a ' + dt(g.devolver) + ')' : '') + ':\n' + pecas +
+    '\n\nQuando puderem, agradecemos a devolução. Se quiserem ficar com alguma peça, digam-nos e incluímos na fatura.\n\nObrigado,\nINOVASTAMP';
+  window.open('https://wa.me/' + (tel ? telWa(tel) : '') + '?text=' + encodeURIComponent(t), '_blank');
+}
+function novoEmp() {
+  var d = new Date(D.hoje + 'T00:00:00'); d.setDate(d.getDate() + 14);
+  EN2 = { cliente: ECLI ? ECLI.cliente : '', nif: ECLI ? ECLI.nif : '', devolver: isoLocal(d), notas: '', itens: [] };
+  desenharNovoEmp();
+}
+function desenharNovoEmp() {
+  var e = EN2, h = '<div class="card"><div class="b">Novo empréstimo</div><label>Cliente</label><input id="emCli" list="dlEmCli" value="' + esc(e.cliente) +
+    '" onchange="EN2.cliente=this.value.trim();var c=cliPorNome(EN2.cliente);EN2.nif=c?c[1]:\'\'"><datalist id="dlEmCli">' + D.clientes.map(function (c) { return '<option value="' + esc(c[0]) + '">'; }).join('') + '</datalist>' +
+    '<div class="g2"><div><label>Devolver até</label><input type="date" value="' + esc(e.devolver) + '" onchange="EN2.devolver=this.value"></div>' +
+    '<div><label>Notas</label><input value="' + esc(e.notas) + '" placeholder="ex.: kit de tamanhos" onchange="EN2.notas=this.value"></div></div></div>';
+  h += e.itens.map(function (l, i) {
+    var cores = coresDe(l.ref), tams = tamanhosDe(l.ref);
+    if (l.cor && !cores.some(function (o) { return o[0] === l.cor; })) cores.unshift([l.cor, l.cor]);
+    return '<div class="card"><div class="row">' + foto(l.ref) + '<div class="sp b">' + esc(nomeCurto(l.produto)) + '</div><button class="x" onclick="EN2.itens.splice(' + i + ',1);desenharNovoEmp()">✕</button></div>' +
+      '<div class="g3"><div><label>Cor</label>' + (cores.length ? '<select onchange="EN2.itens[' + i + '].cor=this.value">' + opts(cores, l.cor, '—') + '</select>' : '<input value="' + esc(l.cor) + '" onchange="EN2.itens[' + i + '].cor=this.value">') + '</div>' +
+      '<div><label>Tamanho</label>' + (tams.length ? '<select onchange="EN2.itens[' + i + '].tam=this.value">' + opts(tams, l.tam, '—') + '</select>' : '<input value="' + esc(l.tam) + '" onchange="EN2.itens[' + i + '].tam=this.value">') + '</div>' +
+      '<div><label>Qtd</label><input type="number" min="1" value="' + esc(l.qtd) + '" onchange="EN2.itens[' + i + '].qtd=Number(this.value)||\'\'"></div></div>' +
+      (tams.length > 1 ? '<div class="acts"><button class="btn lite" onclick="empKit(' + i + ')">＋ Kit com todos os tamanhos (' + tams.length + ')</button></div>' : '') + '</div>';
+  }).join('');
+  h += '<button class="btn sec" style="width:100%" onclick="empAdd()">＋ Artigo</button>' +
+    '<div class="acts"><button class="btn ok" onclick="guardarEmp()"' + (e.itens.length ? '' : ' disabled') + '>Registar empréstimo</button><button class="btn sec" onclick="EN2=null;$(\'empForm\').innerHTML=\'\'">Cancelar</button></div>';
+  $('empForm').innerHTML = h;
+}
+function empAdd() {
+  PICK = { i: null, cb: function (lab, ref) {
+    var corStock = (D.cores[base(ref)] || []).filter(function (c) { return c.indexOf(STK) === 0; })[0];
+    EN2.itens.push({ produto: lab, ref: ref, cor: corStock ? limpaCor(corStock) : '', tam: '', qtd: 1 }); desenharNovoEmp();
+  } };
+  abrirModal();
+}
+function empKit(i) {
+  var l = EN2.itens[i], ts = tamanhosDe(l.ref);
+  EN2.itens.splice.apply(EN2.itens, [i, 1].concat(ts.map(function (t) { return { produto: l.produto, ref: l.ref, cor: l.cor, tam: t, qtd: 1 }; })));
+  desenharNovoEmp();
+}
+function guardarEmp() {
+  var e = EN2, c = $('emCli'); if (c) { e.cliente = c.value.trim(); var cc = cliPorNome(e.cliente); if (cc) e.nif = cc[1]; }
+  if (!e.cliente) { msg('Indica o cliente.', true); return; }
+  var its = e.itens.filter(function (l) { return Number(l.qtd) > 0; });
+  if (!its.length) { msg('Falta pelo menos um artigo com quantidade.', true); return; }
+  var semCor = its.filter(function (l) { return !l.cor; }).length;
+  if (semCor && !confirm(semCor + ' artigo(s) sem cor — esses não saem do stock. Continuar?')) return;
+  call('apiEmprestimoNovo', { cliente: e.cliente, nif: e.nif, devolver: e.devolver, notas: e.notas,
+    itens: its.map(function (l) { return { produto: l.produto, ref: l.ref, cor: l.cor, tam: l.tam, qtd: Number(l.qtd) }; }) })
+    .then(function (r) { msg('Empréstimo ' + r.id + ' registado (' + r.itens + ' linha(s)). As peças saíram do stock.'); EN2 = null; STOCK = null; irEmprestimos(ECLI); });
 }
 
 // ---------------- stock ----------------
