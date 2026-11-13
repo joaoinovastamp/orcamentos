@@ -254,7 +254,7 @@ function desenharDetalhe(o) {
     '<div class="tot mut"><span>Total s/ IVA</span><span class="num">' + eur(o.tS) + '</span></div></div>';
   h += blocoLucro(o.tS, o.linhas);
   var n = JSON.stringify(o.num).replace(/"/g, '&quot;');
-  h += '<div class="acts">' + (o.pdf ? '<button class="btn sec" onclick="abrirPdf(' + n + ')">Abrir PDF</button>' : '') +
+  h += '<div class="acts">' + (o.pdf ? '<button class="btn sec" onclick="verOrc(' + n + ')">Ver orçamento</button>' : '') +
     '<button class="btn" onclick="enviar(' + n + ',' + JSON.stringify(o.email || '').replace(/"/g, '&quot;') + ')">Enviar por email</button></div>' +
     (o.pdf ? '<div class="acts"><button class="btn wa" onclick="whatsapp(' + n + ')">WhatsApp</button></div><div id="waZona"></div>' : '') +
     '<div class="acts"><button class="btn sec" onclick="editar(' + n + ')">Editar</button><button class="btn sec" onclick="duplicar()">Duplicar</button>' +
@@ -528,6 +528,43 @@ function whatsapp2(num) {
     partilharFicheiro(WA.file, textoWa(r), 'Orçamento ' + r.num, 'waZona', function () { marcarEnviado(r.num); }, waLink);
   });
 }
+// ---------------- Ver o orçamento (PDF) dentro da app e partilhar pelo telemóvel ----------------
+var VO = null;
+function verOrc(num) {
+  comPdfNovo(num, function () {
+    call('apiPartilha', num, false).then(function (r) {
+      var bin = atob(r.b64), a = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
+      var file = null; try { file = new File([a], r.nome, { type: 'application/pdf' }); } catch (e) {}
+      VO = { r: r, file: file, url: URL.createObjectURL(new Blob([a], { type: 'application/pdf' })) };
+      // páginas: o PDF novo tem uma imagem por página
+      var pags = [], s = -1;
+      for (var j = 0; j < a.length - 2; j++) {
+        if (s < 0 && a[j] === 0xFF && a[j + 1] === 0xD8 && a[j + 2] === 0xFF) s = j;
+        else if (s >= 0 && a[j] === 0xFF && a[j + 1] === 0xD9 && (a[j + 2] === 0x0A || a[j + 2] === 0x0D)) { pags.push(URL.createObjectURL(new Blob([a.slice(s, j + 2)], { type: 'image/jpeg' }))); s = -1; }
+      }
+      var pode = file && podePartilhar(file);
+      var h = '<div id="voFundo" style="position:fixed;inset:0;z-index:9000;background:#2b3245;display:flex;flex-direction:column">' +
+        '<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#1F3864;color:#fff"><b style="flex:1">Orçamento ' + esc(r.num) + '</b>' +
+        '<button onclick="fecharOrc()" style="background:none;border:0;color:#fff;font-size:26px;line-height:1;padding:0 4px">×</button></div>' +
+        '<div style="flex:1;overflow:auto;padding:12px">' + (pags.length ? pags.map(function (u) { return '<img src="' + u + '" style="width:100%;max-width:820px;display:block;margin:0 auto 12px;border-radius:6px;box-shadow:0 2px 12px rgba(0,0,0,.35)">'; }).join('')
+          : '<div class="card mut" style="max-width:520px;margin:20px auto">Não consegui mostrar as páginas aqui — usa "Descarregar" para o ver.</div>') + '</div>' +
+        '<div style="padding:10px 14px calc(10px + env(safe-area-inset-bottom));background:#fff;display:flex;gap:8px">' +
+        (pode ? '<button class="btn wa" style="flex:2;font-size:16px;padding:13px" onclick="partilharOrc()">Partilhar</button>' : '') +
+        '<button class="btn sec" style="flex:1;padding:13px" onclick="descarregarOrc()">Descarregar</button></div></div>';
+      var d = document.createElement('div'); d.id = 'voCaixa'; d.innerHTML = h; document.body.appendChild(d);
+    });
+  });
+}
+function fecharOrc() { var d = $('voCaixa'); if (d) d.remove(); }
+function partilharOrc() {
+  if (!VO || !VO.file) return;
+  navigator.share({ files: [VO.file], text: textoWa(VO.r), title: 'Orçamento ' + VO.r.num })
+    .then(function () { marcarEnviado(VO.r.num); }).catch(function () {});
+}
+function descarregarOrc() {
+  if (!VO) return; var l = document.createElement('a'); l.href = VO.url; l.download = VO.r.nome; document.body.appendChild(l); l.click(); l.remove();
+}
 // computador (sem partilha de ficheiros): abre o WhatsApp com a mensagem e o link do PDF; escolhe-se lá o contacto
 function waLink() {
   if (!WA) return;
@@ -715,7 +752,7 @@ function calcular(guardar, forcar) {
       LISTA = []; STOCK = null;
       if (r.estado) { ED.estado = r.estado; $('eEst').value = r.estado; }
       msg('Guardado: ' + r.numero + (r.cliMsg ? ' · ' + r.cliMsg : '') + (r.msgs && r.msgs.length ? '\n' + r.msgs.join('\n') : ''));
-      var botoes = function () { $('eDepois').innerHTML = '<div class="acts">' + (r.pdf ? '<button class="btn sec" onclick="abrirPdf(\'' + esc(r.numero) + '\')">Abrir PDF</button>' : '') +
+      var botoes = function () { $('eDepois').innerHTML = '<div class="acts">' + (r.pdf ? '<button class="btn sec" onclick="verOrc(\'' + esc(r.numero) + '\')">Ver orçamento</button>' : '') +
         '<button class="btn" onclick="enviar(\'' + esc(r.numero) + '\',\'' + esc(ED.email) + '\')">Enviar por email</button></div>' +
         '<div class="acts"><button class="btn sec" onclick="abrir(\'' + esc(r.numero) + '\')">Ver orçamento (WhatsApp, encomenda…)</button></div>'; };
       if (r.pdf) { $('eDepois').innerHTML = '<div class="card mut" style="text-align:center">A preparar o PDF…</div>'; orcPdfNovo(r.numero).then(botoes, botoes); } else botoes();
