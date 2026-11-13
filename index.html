@@ -144,7 +144,8 @@ function call(fn) {
   });
 }
 // PDF: vem pela app (funciona com qualquer conta, sem precisar de acesso ao Drive)
-function abrirPdf(num) {
+function abrirPdf(num) { comPdfNovo(num, function () { abrirPdf2(num); }); }
+function abrirPdf2(num) {
   var w = null;
   call('apiPdf', num).then(function (r) {
     var bin = atob(r.b64), a = new Uint8Array(bin.length);
@@ -286,9 +287,20 @@ function guardarEstado(num) {
     msg(num + ': ' + r.estado + (r.fatura ? ' · fatura ' + r.fatura : '')); LISTA = []; STOCK = null; abrir(num);
   });
 }
+// antes de abrir/enviar: se o PDF ainda estiver no modelo antigo, refaz primeiro
+function comPdfNovo(num, fn) {
+  call('apiPdfEstado', num).then(function (e) {
+    if (e && e.novo) { fn(); return; }
+    msg('A pôr o PDF no modelo novo…');
+    orcPdfNovo(num).then(fn, function () { msg('Não consegui refazer o PDF. Tenta outra vez.', true); });
+  });
+}
 function enviar(num, email) {
   var e = prompt('Enviar o orçamento ' + num + ' para:', email || '');
   if (!e) return;
+  comPdfNovo(num, function () { enviar2(num, e); });
+}
+function enviar2(num, e) {
   call('apiEnviar', num, e).then(function (r) { msg('Enviado para ' + r.email); LISTA = []; abrir(num); });
 }
 
@@ -505,6 +517,9 @@ function textoWa(r) {
 }
 function whatsapp(num) {
   aPreparar('waZona', 'A preparar o PDF…');
+  comPdfNovo(num, function () { whatsapp2(num); });
+}
+function whatsapp2(num) {
   call('apiPartilha', num, false).then(function (r) {
     var bin = atob(r.b64), a = new Uint8Array(bin.length);
     for (var i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
