@@ -246,7 +246,9 @@ function desenharDetalhe(o) {
     '<div class="mut">' + dt(o.data) + ' · validade ' + esc(o.validade) + ' dias' + (o.desconto ? ' · desconto ' + pct(o.desconto) : '') + '</div></div>' +
     '<span class="tag t-' + esc(o.estado.replace(/\s/g, '')) + '">' + esc(o.estado) + '</span></div></div>';
   h += '<div class="card">' + o.linhas.map(function (l) {
-    return '<div class="lin row" style="align-items:flex-start">' + foto(l.ref) + '<div class="sp"><div class="b">' + esc(nomeCurto(l.produto)) + '</div><div class="mut">' + esc(l.ref) + ' · ' + esc(l.cor || 'sem cor') +
+    var k = o.linhas.indexOf(l), opc = (o.opcoes || []).indexOf(k) >= 0, esc0 = o.escolha && !o.escolha.aplicada, escolhido = esc0 && o.escolha.idx.indexOf(k) >= 0;
+    return '<div class="lin row" style="align-items:flex-start' + (esc0 && !escolhido ? ';opacity:.45' : '') + '">' + foto(l.ref) + '<div class="sp"><div class="b">' + esc(nomeCurto(l.produto)) +
+      (opc ? ' <span class="tag" style="background:#fbeef6;color:#9b1c72">opção</span>' : '') + (escolhido ? ' <span class="tag t-Aceite">escolhido</span>' : '') + '</div><div class="mut">' + esc(l.ref) + ' · ' + esc(l.cor || 'sem cor') +
       (l.pers1 ? ' · ' + esc(l.pers1) : '') + (l.pers2 ? ' + ' + esc(l.pers2) : '') + '</div>' +
       (l.tam ? '<div class="mut">Tamanhos: ' + esc(l.tam) + '</div>' : '') +
       '<div class="row num"><span class="sp">' + l.qtd + ' × ' + eur(l.unitC) + '</span><b>' + eur(l.totC) + '</b></div></div></div>';
@@ -254,6 +256,10 @@ function desenharDetalhe(o) {
     '<div class="tot mut"><span>Total s/ IVA</span><span class="num">' + eur(o.tS) + '</span></div></div>';
   h += blocoLucro(o.tS, o.linhas);
   var n = JSON.stringify(o.num).replace(/"/g, '&quot;');
+  if (o.escolha && !o.escolha.aplicada) h = '<div class="card" style="border-left:4px solid #1E8E5A"><b>O cliente aceitou só ' + (o.escolha.idx.length === 1 ? 'este artigo' : 'estes artigos') + ':</b><div style="margin:6px 0">' +
+    o.escolha.idx.map(function (k) { var l = o.linhas[k]; return l ? '• ' + esc(nomeCurto(l.produto)) + ' — ' + l.qtd + ' pç · ' + eur(l.totC) : ''; }).join('<br>') + '</div>' +
+    '<div class="mut">Total da escolha: <b>' + eur(o.escolha.total) + '</b> c/ IVA' + (o.escolha.nome ? ' · aceite por ' + esc(o.escolha.nome) : '') + ' · ' + esc(o.escolha.quando || '') + '</div>' +
+    '<div class="acts"><button class="btn ok" onclick="aplicarEscolha(' + n + ')">Ajustar o orçamento à escolha</button></div><div class="mut">Tira os outros artigos e guarda — fica com o total certo para faturar (continua Aceite).</div></div>' + h;
   h += '<div class="acts">' + (o.pdf ? '<button class="btn sec" onclick="verOrc(' + n + ')">Ver orçamento</button>' : '') +
     '<button class="btn" onclick="enviar(' + n + ',' + JSON.stringify(o.email || '').replace(/"/g, '&quot;') + ')">Enviar por email</button></div>' +
     (o.pdf ? '<div class="acts"><button class="btn wa" onclick="whatsapp(' + n + ')">WhatsApp</button></div><div id="waZona"></div>' : '') +
@@ -359,6 +365,7 @@ function orcDesenhar(o, R) {
     if (!im) return 0; var ih = h - 18, iw = Math.min(maxW - 18, ih * im.width / im.height); ih = iw * im.height / im.width; var w = iw + 18, X0 = dir ? X - w : X;
     x.fillStyle = escuro ? '#0f1a30' : '#fff'; rr(x, X0, Y, w, h, 12); x.fill(); x.drawImage(im, X0 + 9, Y + (h - ih) / 2, iw, ih); return w; }
   var nPecas = 0, soma = 0; o.linhas.forEach(function (l) { nPecas += Number(l.qtd) || 0; soma += Number(l.totS) || 0; });
+  var OPC = {}; (o.opcoes || []).forEach(function (k) { OPC[Number(k)] = true; }); var temOpc = Object.keys(OPC).length > 0;
   var cli = String(o.cliente || '').toUpperCase(), marca = marcaCli(cli);
   var compacto = o.linhas.length > 3, RH = compacto ? 92 : 112, FH = compacto ? 76 : 94, FW = compacto ? 70 : 88;
   function temPers(n) { n = String(n || '').trim(); return n && n !== 'Sem personalização'; }
@@ -371,7 +378,7 @@ function orcDesenhar(o, R) {
     return ps;
   }
   var maxPartes = 1; o.linhas.forEach(function (l) { maxPartes = Math.max(maxPartes, partesDe(l).length); });
-  RH += (maxPartes - 1) * 14;
+  var nLin = maxPartes > 1 ? maxPartes + 1 : 1; RH = Math.max(RH, (compacto ? 80 : 91) + 15 * (nLin - 1) + 16);
   var rodapeY = PH - 48, resumoH = 330;
   var npag = 1, pg = 1;
   // ---------- página 1: cabeçalho ----------
@@ -393,7 +400,7 @@ function orcDesenhar(o, R) {
   // introdução
   var y = 300; fnt(400, 11); var intro = 'Obrigado pelo interesse. Segue a nossa proposta para ' + (marca || cli) + ', com as peças, as cores e a personalização indicadas. Os preços por unidade já incluem IVA — em cada artigo indicamos o preço da peça e de cada personalização.';
   linhas(x, intro, XR - M).forEach(function (s) { txt(s, M, y, '#4a5570', 400, 11); y += 17; });
-  function cabTabela(Y) { txt('ARTIGO', M + FW + 24, Y, '#8a93a8', 700, 8, 'left', 2); txt('QTD.', 540, Y, '#8a93a8', 700, 8, 'right', 2); txt('PREÇO UN.', 632, Y, '#8a93a8', 700, 8, 'right', 2); txt('TOTAL', XR, Y, '#8a93a8', 700, 8, 'right', 2);
+  function cabTabela(Y) { txt('ARTIGO', M + FW + 24, Y, '#8a93a8', 700, 8, 'left', 2); txt('QTD.', 540, Y, '#8a93a8', 700, 8, 'right', 2); txt('PREÇO UN. C/ IVA', 632, Y, '#8a93a8', 700, 8, 'right', 2); txt('TOTAL', XR, Y, '#8a93a8', 700, 8, 'right', 2);
     x.fillStyle = '#14213D'; x.fillRect(M, Y + 10, XR - M, 1.5); return Y + 12; }
   y = cabTabela(y + 18);
   function rodape() {
@@ -426,26 +433,28 @@ function orcDesenhar(o, R) {
       txt(tt, tx, ty, '#14213D', 900, tf, 'left', -0.3);
       if (nm.s) { fnt(400, 10.5); txt(linhas(x, nm.s, tw)[0], tx, ty + 15, '#4a5570', 400, 10.5); }
       var chy = ty + (compacto ? 23 : 26), chx = tx;
-      var chips = []; if (l.cor) chips.push({ t: corSemCodigo(l.cor), c: corHex(corSemCodigo(l.cor)) }); if (l.tam) chips.push({ t: String(l.tam) });
-      chips.forEach(function (c) { var w = larg(c.t, 600, 9) + (c.c ? 24 : 14); if (chx + w > 480) return; x.strokeStyle = '#d5dae5'; x.lineWidth = 1; rr(x, chx, chy, w, 17, 8.5); x.stroke();
+      var chips = []; if (OPC[li]) chips.push({ t: 'OPÇÃO', opc: true }); if (l.cor) chips.push({ t: corSemCodigo(l.cor), c: corHex(corSemCodigo(l.cor)) }); if (l.tam) chips.push({ t: String(l.tam) });
+      chips.forEach(function (c) { var w = larg(c.t, c.opc ? 800 : 600, 9) + (c.c ? 24 : 14); if (chx + w > 480) return; if (c.opc) { x.fillStyle = '#C2268F'; rr(x, chx, chy, w, 17, 8.5); x.fill(); txt(c.t, chx + 7, chy + 12, '#fff', 800, 9); chx += w + 5; return; } x.strokeStyle = '#d5dae5'; x.lineWidth = 1; rr(x, chx, chy, w, 17, 8.5); x.stroke();
         if (c.c) { x.fillStyle = c.c; x.beginPath(); x.arc(chx + 10, chy + 8.5, 4, 0, 7); x.fill(); x.strokeStyle = '#b9c0cc'; x.lineWidth = .6; x.stroke(); }
         txt(c.t, chx + (c.c ? 18 : 7), chy + 12, '#33405e', 600, 9); chx += w + 5; });
-      var py = chy + (compacto ? 31 : 34), partes = partesDe(l);
-      partes.forEach(function (pt, k2) {
-        var yy = py + k2 * 14, val = orcEur(pt.v) + (pt.peca ? '' : ''), vw = larg(val, 700, 10);
+      var py = chy + (compacto ? 28 : 30), partes = partesDe(l), q = Number(l.qtd) || 0, yy = py;
+      partes.forEach(function (pt) {   // uma linha por parte: preço por unidade e depois o total das unidades
         x.fillStyle = pt.peca ? '#1f8fd6' : '#C2268F'; x.beginPath(); x.arc(tx + 3.5, yy - 3.5, 3.5, 0, 7); x.fill();
-        var lab = (pt.peca ? '' : 'Personalização: ') + pt.t; fnt(600, 10); lab = linhas(x, lab, tw - 12 - vw - 14)[0];
+        var lab = (pt.peca ? '' : 'Personalização: ') + pt.t + (pt.peca && partes.length === 1 ? ' · sem personalização' : ''); fnt(600, 10); lab = linhas(x, lab, 470 - tx - 20)[0];
         txt(lab, tx + 12, yy, '#14213D', 600, 10);
-        x.fillStyle = '#d5dae5'; var lx = tx + 12 + larg(lab, 600, 10) + 6, rx = tx + tw - vw - 6; for (var dx = lx; dx < rx; dx += 4) x.fillRect(dx, yy - 2, 1.4, 1);
-        txt(val, tx + tw, yy, '#14213D', 700, 10, 'right');
+        x.fillStyle = '#dde1ea'; var lx = tx + 12 + larg(lab, 600, 10) + 6; for (var dx = lx; dx < 512; dx += 4) x.fillRect(dx, yy - 2, 1.4, 1);
+        txt(String(q), 540, yy, '#33405e', 600, 10.5, 'right');
+        txt(orcEur(pt.v), 632, yy, '#33405e', 600, 10.5, 'right');
+        txt(orcEur(Math.round(pt.v * q * 100) / 100), XR, yy, '#33405e', 600, 10.5, 'right');
+        yy += 15;
       });
-      if (partes.length === 1) txt('Sem personalização', tx + 12, py + 14, '#8a93a8', 500, 9);
-      var my = cy + FH / 2 + 4;
-      txt(String(l.qtd), 540, my, '#14213D', 600, 12, 'right');
-      txt(orcEur(l.unitC), 632, my - 3, '#14213D', 700, 12, 'right');
-      txt(partes.length > 1 ? 'c/ IVA · peça + pers.' : 'c/ IVA', 632, my + 10, '#8a93a8', 500, 8, 'right');
-      txt(orcEur(l.totC), XR, my - 3, '#14213D', 800, 13.5, 'right');
-      txt('c/ IVA', XR, my + 10, '#8a93a8', 500, 8, 'right');
+      if (partes.length > 1) {   // total do artigo
+        x.fillStyle = '#c9cfdb'; x.fillRect(tx, yy - 11, XR - tx, 1);
+        txt('Total do artigo', tx + 12, yy + 1, '#14213D', 800, 10.5);
+        txt(String(q), 540, yy + 1, '#14213D', 800, 11, 'right');
+        txt(orcEur(l.unitC), 632, yy + 1, '#14213D', 800, 11, 'right');
+        txt(orcEur(l.totC), XR, yy + 1, '#14213D', 900, 12, 'right');
+      }
       y += RH; x.fillStyle = '#e6e9f0'; x.fillRect(M, y, XR - M, 1);
     }
     if (p === dist.length - 1) {
@@ -454,19 +463,29 @@ function orcDesenhar(o, R) {
       txt('CONDIÇÕES', M, ry + 8, '#8a93a8', 700, 8, 'left', 2.4);
       var cond = ['Proposta válida por ' + (o.validade || 30) + ' dias a contar da data.', 'Preços por unidade com IVA incluído (taxa legal em vigor).',
         'Produção após aprovação da maquete; prazo indicado na adjudicação.', 'Tamanhos confirmados por colaborador antes da produção.'];
+      if (temOpc) cond.push('Artigos marcados OPÇÃO: escolha os que quer ao aprovar online.');
       if (o.obs) cond.push(String(o.obs));
       var cyy = ry + 28; fnt(400, 10.2);
       cond.forEach(function (c) { linhas(x, c, 360).slice(0, 3).forEach(function (s, i) { if (i === 0) { x.fillStyle = '#1f8fd6'; x.beginPath(); x.arc(M + 2.5, cyy - 3.5, 2.5, 0, 7); x.fill(); } txt(s, M + 12, cyy, '#33405e', 400, 10.2); cyy += 15; }); cyy += 3; });
       var bx = XR - 280, bw = 280, by = ry - 4, desc = soma - (Number(o.tS) || 0), iva = (Number(o.tC) || 0) - (Number(o.tS) || 0);
       var linhasT = [['Subtotal s/ IVA', orcEur(soma)]]; if (desc > 0.009) linhasT.push(['Desconto' + (o.desconto ? ' ' + Math.round(Number(o.desconto) * (Number(o.desconto) < 1 ? 100 : 1)) + '%' : ''), '− ' + orcEur(desc)]);
       linhasT.push(['IVA ' + (Number(o.tS) > 0 ? Math.round(iva / Number(o.tS) * 100) : 23) + '%', orcEur(iva)]);
+      var totLab = 'TOTAL', totVal = Number(o.tC) || 0, nota = nPecas + ' peças · ≈ ' + orcEur(nPecas ? (Number(o.tC) || 0) / nPecas : 0) + ' por peça c/ IVA';
+      if (temOpc) {   // artigos em opção: o cliente escolhe ao aprovar
+        var base = 0, ops = [];
+        o.linhas.forEach(function (l, k) { if (OPC[k]) ops.push([propNomes(l.produto, l.ref).t, Number(l.totC) || 0]); else base += Number(l.totC) || 0; });
+        linhasT = []; if (base > 0) linhasT.push(['Artigos base c/ IVA', orcEur(base)]);
+        ops.forEach(function (op) { linhasT.push(['Opção · ' + String(op[0]).toUpperCase(), (base > 0 ? '+ ' : '') + orcEur(op[1])]); });
+        totLab = 'A PARTIR DE'; totVal = base > 0 ? base : Math.min.apply(null, ops.map(function (op) { return op[1]; }));
+        nota = 'Escolha as opções que quer ao aprovar online';
+      }
       var bh = linhasT.length * 33 + 16 + 58 + 26;
       x.strokeStyle = '#e1e5ee'; x.lineWidth = 1; rr(x, bx, by, bw, bh, 14); x.stroke();
       linhasT.forEach(function (t, i) { txt(t[0], bx + 19, by + 28 + i * 33, '#4a5570', 400, 11); txt(t[1], bx + bw - 19, by + 28 + i * 33, '#14213D', 700, 11, 'right'); });
       var gy = by + linhasT.length * 33 + 16; x.save(); rr(x, bx, by, bw, bh, 14); x.clip();
-      x.fillStyle = '#14213D'; x.fillRect(bx, gy, bw, 58); txt('TOTAL', bx + 19, gy + 35, '#aab6d3', 700, 8.5, 'left', 2.2); txt(orcEur(o.tC), bx + bw - 19, gy + 39, '#fff', 900, 24, 'right', -0.5);
+      x.fillStyle = '#14213D'; x.fillRect(bx, gy, bw, 58); txt(totLab, bx + 19, gy + 35, '#aab6d3', 700, 8.5, 'left', 2.2); txt(orcEur(totVal), bx + bw - 19, gy + 39, '#fff', 900, 24, 'right', -0.5);
       x.fillStyle = '#fbeef6'; x.fillRect(bx, gy + 58, bw, 26); x.restore();
-      txt(nPecas + ' peças · ≈ ' + orcEur(nPecas ? (Number(o.tC) || 0) / nPecas : 0) + ' por peça c/ IVA', bx + bw - 19, gy + 75, '#9b1c72', 600, 9.5, 'right');
+      txt(nota, bx + bw - 19, gy + 75, '#9b1c72', 600, 9.5, 'right');
       // ---------- próximo passo ----------
       var pyy = rodapeY - 22 - 132, ph = 132;
       var g2 = x.createLinearGradient(M, 0, XR, 0); g2.addColorStop(0, '#C2268F'); g2.addColorStop(1, '#8d2a9c'); x.fillStyle = g2; rr(x, M, pyy, XR - M, ph, 16); x.fill();
@@ -623,8 +642,18 @@ function duplicar() {
          validade: o.validade, obs: o.obs, desconto: o.desconto === '' ? '' : Math.round(o.desconto * 1000) / 10, estado: '', fatura: '', margemGlobal: '',
          linhas: o.linhas.map(function (l) { return { produto: l.produto, ref: l.ref, cor: l.cor, qtd: l.qtd, tam: l.tam || '',
            margemAj: l.margemAj === '' ? '' : Math.round(l.margemAj * 1000) / 10, pers1: l.pers1, precoAj1: l.precoAj1, pers2: l.pers2, precoAj2: l.precoAj2 }; }) };
+  (o.opcoes || []).forEach(function (k) { if (ED.linhas[k]) ED.linhas[k].opc = true; });
   CALC = null; desenharEditor();
   msg('Cópia de ' + o.num + '. Muda o cliente ou os artigos e carrega em Guardar — fica com um número novo.');
+}
+function aplicarEscolha(num) {
+  var e = ATUAL && ATUAL.escolha; if (!e) return;
+  editar(num, function () {
+    ED.linhas = ED.linhas.filter(function (l, k) { return e.idx.indexOf(k) >= 0; });
+    ED.linhas.forEach(function (l) { l.opc = false; });
+    ED._escolha = num;
+  });
+  setTimeout(function () { msg('Ficaram só os artigos que o cliente escolheu. Confirma e carrega em "Guardar + PDF" — o orçamento continua Aceite.'); }, 1500);
 }
 function criarEncomenda(num, forn) {
   if (!confirm('Criar a encomenda à ' + forn + ' com os artigos do orçamento ' + num + '?\nFica guardada como rascunho; envias depois na folha.')) return;
@@ -645,6 +674,7 @@ function editar(num, depois) {
            validade: o.validade, obs: o.obs, desconto: o.desconto === '' ? '' : Math.round(o.desconto * 1000) / 10, estado: o.estado, fatura: o.fatura,
            linhas: o.linhas.map(function (l) { return { produto: l.produto, ref: l.ref, cor: l.cor, qtd: l.qtd, tam: l.tam || '', margemAj: l.margemAj === '' ? '' : Math.round(l.margemAj * 1000) / 10,
              pers1: l.pers1, precoAj1: l.precoAj1, pers2: l.pers2, precoAj2: l.precoAj2 }; }) };
+    (o.opcoes || []).forEach(function (k) { if (ED.linhas[k]) ED.linhas[k].opc = true; });
     ED.margemGlobal = ED.linhas.length && ED.linhas.every(function (l) { return l.margemAj !== '' && l.margemAj === ED.linhas[0].margemAj; }) ? ED.linhas[0].margemAj : '';
     if (depois) depois();
     CALC = null; desenharEditor();
@@ -686,6 +716,7 @@ function desenharLinhas() {
     var c = CALC && CALC.linhas[i], cores = coresDe(l.ref);
     if (l.cor && !cores.some(function (o) { return o[0] === l.cor; })) cores.unshift([l.cor, l.cor]);
     return '<div class="card"><div class="row">' + foto(l.ref) + '<button class="prod-btn sp" onclick="escolherProduto(' + i + ')">' + esc(l.produto) + '</button><button class="x" onclick="tirar(' + i + ')">✕</button></div>' +
+      '<label style="display:flex;gap:8px;align-items:center;margin:6px 0 2px;font-weight:600;color:#9b1c72"><input type="checkbox" style="width:auto"' + (l.opc ? ' checked' : '') + ' onchange="ED.linhas[' + i + '].opc=this.checked"> Opção — o cliente escolhe se quer este artigo</label>' +
       '<div class="g3"><div><label>Cor</label>' + (cores.length ? '<select onchange="ED.linhas[' + i + '].cor=this.value;mudou()">' + opts(cores, l.cor, '—') + '</select>'
         : '<input value="' + esc(l.cor) + '" onchange="ED.linhas[' + i + '].cor=this.value;mudou()">') + '</div>' +
       '<div><label>Quantidade</label><input id="q' + i + '" type="number" inputmode="numeric" min="1" value="' + esc(l.qtd) + '" onchange="ED.linhas[' + i + '].qtd=Number(this.value)||\'\';mudou();verTam(' + i + ')"></div>' +
@@ -695,9 +726,9 @@ function desenharLinhas() {
       '<div class="g2"><div><label>Personalização 1</label><select onchange="ED.linhas[' + i + '].pers1=this.value;mudou()">' + opts(p, l.pers1, '—') + '</select></div>' +
       '<div><label>Personalização 2</label><select onchange="ED.linhas[' + i + '].pers2=this.value;mudou()">' + opts(p, l.pers2, '—') + '</select></div></div>' +
       '<details' + (l.precoAj1 !== '' || l.precoAj2 !== '' ? ' open' : '') + '><summary>Ajustes (preço da personalização)</summary><div class="g2">' +
-      '<div><label>Pers. 1 €/pç</label><input type="number" step="0.05" value="' + esc(l.precoAj1) + '" placeholder="' + (c && c.tab1 !== '' ? eur(c.tab1) : 'tabela') + '" onchange="ED.linhas[' + i + '].precoAj1=this.value===\'\'?\'\':Number(this.value);mudou()"></div>' +
-      '<div><label>Pers. 2 €/pç</label><input type="number" step="0.05" value="' + esc(l.precoAj2) + '" placeholder="' + (c && c.tab2 !== '' ? eur(c.tab2) : 'tabela') + '" onchange="ED.linhas[' + i + '].precoAj2=this.value===\'\'?\'\':Number(this.value);mudou()"></div>' +
-      '</div><div class="mut">Vazio = tabela. Personalização nunca abaixo de 1 €. As posições sem preço na tabela (ex.: DTF) precisam do preço aqui.</div>' +
+      '<div><label>Pers. 1 · preço final c/ IVA</label><input type="number" step="0.05" inputmode="decimal" value="' + (l.precoAj1 === '' ? '' : (Math.round(Number(l.precoAj1) * 1.23 * 100) / 100)) + '" placeholder="' + (c && c.tab1 !== '' ? eur(Math.ceil(Math.round(Math.max(1, c.tab1) * 123) / 10 - 1e-9) / 10) : 'tabela') + '" onchange="ED.linhas[' + i + '].precoAj1=this.value===\'\'?\'\':Math.round(Number(this.value.replace(\',\',\'.\')) / 1.23 * 10000) / 10000;mudou()"></div>' +
+      '<div><label>Pers. 2 · preço final c/ IVA</label><input type="number" step="0.05" inputmode="decimal" value="' + (l.precoAj2 === '' ? '' : (Math.round(Number(l.precoAj2) * 1.23 * 100) / 100)) + '" placeholder="' + (c && c.tab2 !== '' ? eur(Math.ceil(Math.round(Math.max(1, c.tab2) * 123) / 10 - 1e-9) / 10) : 'tabela') + '" onchange="ED.linhas[' + i + '].precoAj2=this.value===\'\'?\'\':Math.round(Number(this.value.replace(\',\',\'.\')) / 1.23 * 10000) / 10000;mudou()"></div>' +
+      '</div><div class="mut">Vazio = tabela (mínimo 1 € + IVA). Se escrever um preço, é o preço final c/ IVA que o cliente vê — vale mesmo abaixo do mínimo. As posições sem preço na tabela (ex.: DTF) precisam do preço aqui.</div>' +
       '<button class="btn lite" onclick="dtfDaLinha(' + i + ')">✎ Simular DTF / maquete para este artigo</button><button class="btn lite" onclick="seriDaLinha(' + i + ')">✎ Calcular serigrafia para este artigo</button></details>' +
       (c ? '<div class="row num" style="margin-top:8px"><span class="sp mut">' + esc(c.escalao) + ' pç · peça ' + eur(c.pecaS) + ' + pers. ' + eur(c.persU) + ' s/IVA</span></div>' +
         '<div class="row num"><span class="sp">' + l.qtd + ' × <b>' + eur(c.unitC) + '</b> c/IVA</span><b>' + eur(c.totC) + '</b></div>' : '') +
@@ -794,7 +825,7 @@ function calcular(guardar, forcar) {
   if (!ED.linhas.length) { msg('Adiciona pelo menos um artigo.', true); return; }
   if (ED.linhas.some(function (l) { return !l.qtd; })) { msg('Falta a quantidade num artigo.', true); return; }
   if (guardar && !ED.cliente) { msg('Falta o nome do cliente.', true); return; }
-  if (guardar && !forcar && ['Aceite', 'Em produção'].indexOf(ED.estado) >= 0 && ED.numero) {
+  if (guardar && !forcar && !ED._escolha && ['Aceite', 'Em produção'].indexOf(ED.estado) >= 0 && ED.numero) {
     var v = confirm('Este orçamento já estava ' + ED.estado + '.\nOK = volta a "Enviado" (o cliente aceita de novo a versão alterada).\nCancelar = mantém "' + ED.estado + '".');
     if (v) { ED.estado = 'Enviado'; var se = $('eEst'); if (se) se.value = 'Enviado'; }
   }
@@ -810,7 +841,12 @@ function calcular(guardar, forcar) {
       var botoes = function () { $('eDepois').innerHTML = '<div class="acts">' + (r.pdf ? '<button class="btn sec" onclick="verOrc(\'' + esc(r.numero) + '\')">Ver orçamento</button>' : '') +
         '<button class="btn" onclick="enviar(\'' + esc(r.numero) + '\',\'' + esc(ED.email) + '\')">Enviar por email</button></div>' +
         '<div class="acts"><button class="btn sec" onclick="abrir(\'' + esc(r.numero) + '\')">Ver orçamento (WhatsApp, encomenda…)</button></div>'; };
-      if (r.pdf) { $('eDepois').innerHTML = '<div class="card mut" style="text-align:center">A preparar o PDF…</div>'; orcPdfNovo(r.numero).then(botoes, botoes); } else botoes();
+      var opIdx = ED.linhas.map(function (l, k) { return l.opc ? k : -1; }).filter(function (k) { return k >= 0; });
+      var pre = semFalha(call('apiOrcOpcoes', r.numero, opIdx));
+      if (ED._escolha) { var ne = ED._escolha; ED._escolha = null; pre = pre.then(function () { return semFalha(call('apiEscolhaAplicada', ne)); }); }
+      pre.then(function () {
+        if (r.pdf) { $('eDepois').innerHTML = '<div class="card mut" style="text-align:center">A preparar o PDF…</div>'; orcPdfNovo(r.numero).then(botoes, botoes); } else botoes();
+      });
       call('apiInit').then(function (d) { D = d; });
     }
   });
