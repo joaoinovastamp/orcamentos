@@ -949,7 +949,8 @@ function catAdicionar() {
 function catRecursos(D, cliente) {
   var fotos = {}, refs = D.itens.map(function (i) { return i.ref; });
   var pF = refs.reduce(function (p, ref) {
-    return p.then(function () { return fotoHD(ref).then(function (r) { return r && r.b64 ? r : semFalha(call('apiFoto', ref)); }).then(imgDeR).then(function (im) { fotos[ref] = im; }); });
+    var hd = false;
+    return p.then(function () { return fotoHD(ref).then(function (r) { if (r && r.b64) { hd = true; return r; } return semFalha(call('apiFoto', ref)); }).then(imgDeR).then(function (im) { if (im) im._hd = hd; fotos[ref] = im; }); });
   }, Promise.resolve());
   var pL = cliente ? semFalha(call('apiLogos', cliente, '')).then(function (l) {
     l = l || []; return Promise.all(l.map(imgDeR)).then(function (ims) { var e = null, q = null; ims.forEach(function (im) { if (!im) return; if (!q) q = im; if (!e && claroOuEscuro(im) === 'escuro') e = im; }); return e || q; });
@@ -974,24 +975,24 @@ function catDesenhar(D, R, titulo, cliente) {
     txt('joaoinovastamp@gmail.com · Póvoa de Lanhoso' + (npag > 1 ? ' · página ' + pg + '/' + npag : ''), XR, rodapeY + 28, '#8a93a8', 400, 8.6, 'right'); }
   var hoje = new Date(), tit = titulo || 'Catálogo', cli = String(cliente || '').toUpperCase(), itens = D.itens;
   // grelha: 2 colunas, cartões de 300 px
-  var CW = (XR - M - 16) / 2, CH = 300, G = 16, ini1 = 286, iniN = 102, fimY = rodapeY - 14, fecho = 196;
+  var CW = (XR - M - 16) / 2, CH = 255, G = 16, ini1 = 260, iniN = 102, fimY = rodapeY - 14, fecho = 196;
   var porPag1 = Math.floor((fimY - ini1 + G) / (CH + G)) * 2, porPagN = Math.floor((fimY - iniN + G) / (CH + G)) * 2;
   var dist = [Math.min(itens.length, porPag1)], resto = itens.length - dist[0]; while (resto > 0) { var k = Math.min(resto, porPagN); dist.push(k); resto -= k; }
   var ultIni = dist.length === 1 ? ini1 : iniN, ultLinhas = Math.ceil(dist[dist.length - 1] / 2), ultFim = ultIni + ultLinhas * (CH + G);
   if (ultFim + fecho > fimY) dist.push(0);
   npag = dist.length;
   // ---------- página 1 ----------
-  novaPag(); cab(262);
-  cartao(R.ino, M, 32, 62, 120);
-  if (R.logoC) cartao(R.logoC, XR, 36, 54, 170, claroOuEscuro(R.logoC) === 'claro', true);
-  txt('CATÁLOGO DE PRODUTOS', M, 124, '#aab6d3', 600, 9, 'left', 2.6);
+  novaPag(); cab(244);
+  cartao(R.ino, M, 30, 58, 120);
+  if (R.logoC) cartao(R.logoC, XR, 32, 52, 170, claroOuEscuro(R.logoC) === 'claro', true);
+  txt('CATÁLOGO DE PRODUTOS', M, 114, '#aab6d3', 600, 9, 'left', 2.6);
   var ft = 40; while (larg(tit, 900, ft, -1.2) > (cli ? 380 : XR - M) && ft > 22) ft -= 2;
-  txt(tit, M - 2, 164, '#fff', 900, ft, 'left', -1.2);
-  txt(itens.length + (itens.length === 1 ? ' artigo selecionado' : ' artigos selecionados'), M, 188, '#f3b6dc', 700, 12, 'left', 0.5);
-  if (cli) { txt('PREPARADO PARA', XR, 146, '#aab6d3', 600, 9, 'right', 2.6); var fs = 17; while (larg(cli, 800, fs) > 320 && fs > 11) fs--; txt(cli, XR, 170, '#fff', 800, fs, 'right'); }
-  x.fillStyle = 'rgba(255,255,255,.14)'; x.fillRect(M, 204, XR - M, 1);
+  txt(tit, M - 2, 152, '#fff', 900, ft, 'left', -1.2);
+  txt(itens.length + (itens.length === 1 ? ' artigo selecionado' : ' artigos selecionados'), M, 174, '#f3b6dc', 700, 12, 'left', 0.5);
+  if (cli) { txt('PREPARADO PARA', XR, 134, '#aab6d3', 600, 9, 'right', 2.6); var fs = 17; while (larg(cli, 800, fs) > 320 && fs > 11) fs--; txt(cli, XR, 158, '#fff', 800, fs, 'right'); }
+  x.fillStyle = 'rgba(255,255,255,.14)'; x.fillRect(M, 190, XR - M, 1);
   [['Data', orcData(hoje.toISOString())], ['Preços', 'por escalão de quantidade'], ['Personalização', 'serigrafia e DTF'], ['Contacto', 'Hugo · INOVASTAMP']].forEach(function (m, i) {
-    var X = M + i * 174; txt(m[0].toUpperCase(), X, 228, '#aab6d3', 600, 8, 'left', 2); txt(m[1], X, 245, '#fff', 600, 11); });
+    var X = M + i * 174; txt(m[0].toUpperCase(), X, 212, '#aab6d3', 600, 8, 'left', 2); txt(m[1], X, 228, '#fff', 600, 11); });
   var li = 0;
   dist.forEach(function (k, p) {
     if (p > 0) { rodape(); pg++; novaPag(); cab(76); txt('CATÁLOGO · ' + tit.toUpperCase(), M, 44, '#fff', 800, 13, 'left', 1); if (cli) txt(cli, XR, 44, '#aab6d3', 600, 10, 'right'); }
@@ -1001,9 +1002,9 @@ function catDesenhar(D, R, titulo, cliente) {
       // cartão
       x.save(); x.shadowColor = 'rgba(20,33,61,.10)'; x.shadowBlur = 14; x.shadowOffsetY = 4; x.fillStyle = '#fff'; rr(x, X, Y, CW, CH, 16); x.fill(); x.restore();
       x.strokeStyle = '#e6e9f0'; x.lineWidth = 1; rr(x, X, Y, CW, CH, 16); x.stroke();
-      var PHh = 168, im = R.fotos[it.ref];
+      var PHh = 124, im = R.fotos[it.ref];
       x.save(); rr(x, X, Y, CW, PHh, 16); x.clip(); x.fillStyle = '#eef1f5'; x.fillRect(X, Y, CW, PHh);
-      if (im) { var retrato = im.height / im.width > 1.1, k2 = retrato ? Math.max(CW / im.width, PHh / im.height) : Math.min((CW - 20) / im.width, (PHh - 16) / im.height);
+      if (im) { var retrato = im.height / im.width > 1.1 && im._hd, k2 = retrato ? Math.max(CW / im.width, PHh / im.height) : Math.min((CW - 20) / im.width, (PHh - 16) / im.height);
         var dw = im.width * k2, dh = im.height * k2; if (!retrato) { x.fillStyle = '#fff'; x.fillRect(X, Y, CW, PHh); } x.drawImage(im, X + (CW - dw) / 2, Y + (PHh - dh) * (retrato ? 0.18 : 0.5), dw, dh); }
       x.restore();
       var pr = it.precos || [], desde = pr.length ? pr[pr.length - 1][0] : 0;
