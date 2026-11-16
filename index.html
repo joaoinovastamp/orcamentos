@@ -930,17 +930,55 @@ function novoParaCliente() {
 }
 
 // ---------------- catálogo para cliente ----------------
-var CAT = { itens: [], titulo: '', cliente: '' };
-function irCatalogo() { navOn('n-res'); $('titulo').textContent = 'Catálogo'; desenharCatalogo(); }
+var CAT = { itens: [], titulo: '', cliente: '', id: '', link: '', versao: 0 };
+function irCatalogo() { navOn('n-res'); $('titulo').textContent = 'Catálogo'; desenharCatalogo(); catCarregarListas(); }
 function desenharCatalogo() {
-  var h = '<div class="card"><label>Título</label><input id="catT" value="' + esc(CAT.titulo) + '" placeholder="ex.: Fardamento de cozinha" onchange="CAT.titulo=this.value">' +
-    '<label>Cliente (opcional)</label><input id="catC" value="' + esc(CAT.cliente) + '" onchange="CAT.cliente=this.value"></div>';
+  var h = '<div id="catPed"></div>';
+  h += '<div class="card"><div class="row"><b class="sp">' + (CAT.id ? 'Catálogo ' + esc(CAT.id) + ' · versão ' + CAT.versao : 'Catálogo novo') + '</b>' +
+    (CAT.id ? '<button class="btn sec" style="width:auto;padding:6px 12px" onclick="catNovo()">＋ Novo</button>' : '') + '</div>' +
+    '<label>Título</label><input id="catT" value="' + esc(CAT.titulo) + '" placeholder="ex.: Fardamento de cozinha" onchange="CAT.titulo=this.value">' +
+    '<label>Cliente (opcional)</label><input id="catC" list="dlCatCli" value="' + esc(CAT.cliente) + '" onchange="CAT.cliente=this.value">' +
+    '<datalist id="dlCatCli">' + (D.clientes || []).map(function (c) { return '<option value="' + esc(c[0]) + '">'; }).join('') + '</datalist>' +
+    (CAT.link ? '<div class="mut" style="margin-top:8px">Link do cliente (mostra sempre a versão mais recente): <a href="' + esc(CAT.link) + '" target="_blank">abrir</a></div>' : '') + '</div>';
   h += '<h2>Artigos (' + CAT.itens.length + ')</h2><div class="card">' + (CAT.itens.length ? CAT.itens.map(function (a, i) {
     return '<div class="sel">' + foto(a.ref) + '<div class="sp">' + esc(a.lab) + '</div><button class="x" onclick="CAT.itens.splice(' + i + ',1);desenharCatalogo()">✕</button></div>';
   }).join('') : '<div class="mut">Ainda sem artigos.</div>') + '<div class="acts"><button class="btn sec" onclick="catAdicionar()">＋ Adicionar artigo</button></div></div>';
-  h += '<div class="acts"><button class="btn ok" onclick="catCriar()"' + (CAT.itens.length ? '' : ' disabled') + '>Criar PDF</button></div><div id="catZona"></div>';
+  h += '<div class="acts"><button class="btn ok" onclick="catCriar()"' + (CAT.itens.length ? '' : ' disabled') + '>' + (CAT.id ? 'Guardar e gerar nova versão' : 'Criar catálogo') + '</button></div><div id="catZona"></div>';
+  h += '<div id="catLst"></div>';
   $('main').innerHTML = h;
+  catDesenharListas();
 }
+var CATLST = null, CATPED = null;
+function catCarregarListas() {
+  semFalha(call('apiCatPedidos')).then(function (p) { CATPED = p || []; catDesenharListas(); });
+  semFalha(call('apiCatLista')).then(function (l) { CATLST = l || []; catDesenharListas(); });
+}
+function catDesenharListas() {
+  var zp = $('catPed'), zl = $('catLst'); if (!zp || !zl) return;
+  var novos = (CATPED || []).filter(function (p) { return p.estado === 'Novo'; });
+  zp.innerHTML = novos.length ? '<h2>Pedidos de clientes (' + novos.length + ')</h2>' + novos.map(function (p) {
+    return '<div class="card" style="border-left:4px solid #C2268F"><div class="row"><b class="sp">' + esc(p.cliente || p.cat) + '</b><span class="mut">' + dt(new Date(p.data).toISOString()) + '</span></div>' +
+      '<div style="margin:6px 0;font-size:15px">' + esc(p.pedido) + '</div>' +
+      '<div class="mut">' + [p.qtd ? 'Qtd.: ' + esc(p.qtd) : '', p.prazo ? 'Para: ' + esc(p.prazo) : '', p.nome ? esc(p.nome) : '', p.contacto ? esc(p.contacto) : ''].filter(String).join(' · ') + '</div>' +
+      '<div class="acts"><button class="btn" onclick="catAbrirId(' + js(p.cat) + ')">Abrir o catálogo e juntar modelos</button><button class="btn sec" onclick="catPedidoTratado(' + p.row + ')">Já tratado</button></div></div>';
+  }).join('') : '';
+  zl.innerHTML = CATLST && CATLST.length ? '<h2>Catálogos guardados</h2><div class="card">' + CATLST.map(function (c) {
+    return '<div class="sel"><div class="sp"><b>' + esc(c.titulo || 'Catálogo') + '</b>' + (c.cliente ? ' · ' + esc(c.cliente) : '') +
+      '<div class="mut">' + esc(c.id) + ' · v' + c.versao + ' · ' + c.refs.length + ' artigos · ' + dt(new Date(c.atualizado).toISOString()) + '</div></div>' +
+      '<button class="btn sec" style="width:auto;padding:6px 12px" onclick="catAbrirId(' + js(c.id) + ')">Abrir</button></div>';
+  }).join('') + '</div>' : '';
+}
+function catLabel(ref) { var p = (D.produtos || []).filter(function (x) { return x[1] === ref; })[0]; return p ? limpaProd(p[0]) : ref; }
+function catAbrirId(id) {
+  var abre = function () {
+    var c = (CATLST || []).filter(function (x) { return x.id === id; })[0]; if (!c) { msg('Não encontrei o catálogo ' + id, true); return; }
+    CAT = { itens: c.refs.map(function (r) { return { ref: r, lab: catLabel(r) }; }), titulo: c.titulo, cliente: c.cliente, id: c.id, link: c.link, versao: c.versao };
+    desenharCatalogo(); window.scrollTo(0, 0);
+  };
+  if (CATLST) abre(); else call('apiCatLista').then(function (l) { CATLST = l; abre(); });
+}
+function catNovo() { CAT = { itens: [], titulo: '', cliente: '', id: '', link: '', versao: 0 }; desenharCatalogo(); }
+function catPedidoTratado(row) { call('apiCatPedidoEstado', row, 'Tratado').then(function () { (CATPED || []).forEach(function (p) { if (p.row === row) p.estado = 'Tratado'; }); catDesenharListas(); }); }
 function catAdicionar() {
   PICK = { i: null, cb: function (lab, ref) { if (!CAT.itens.some(function (x) { return x.ref === ref; })) CAT.itens.push({ lab: lab, ref: ref }); desenharCatalogo(); } };
   abrirModal();
@@ -959,7 +997,7 @@ function catRecursos(D, cliente) {
   var pFt = document.fonts && document.fonts.load ? Promise.all(['400', '600', '700', '800', '900'].map(function (w) { return document.fonts.load(w + ' 20px Inter').catch(function () {}); })) : Promise.resolve();
   return Promise.all([pF, pL, imgDe(LOGO_INO), pT, pFt]).then(function (r) { return { fotos: fotos, logoC: r[1], ino: r[2] }; });
 }
-function catDesenhar(D, R, titulo, cliente) {
+function catDesenhar(D, R, titulo, cliente, link) {
   var F = '"Inter", Arial, sans-serif', S = 2, PW = 794, PH = 1123, M = 49, XR = PW - M, pags = [], x = null;
   function novaPag() { var c = document.createElement('canvas'); c.width = PW * S; c.height = PH * S; x = c.getContext('2d'); x.setTransform(S, 0, 0, S, 0, 0); x.fillStyle = '#fff'; x.fillRect(0, 0, PW, PH); pags.push(c); }
   function fnt(w, s) { x.font = w + ' ' + s + 'px ' + F; }
@@ -1033,13 +1071,13 @@ function catDesenhar(D, R, titulo, cliente) {
         'Preços válidos por 30 dias, sujeitos a confirmação de stock.'], cyy = fy + 28;
       cond.forEach(function (c) { x.fillStyle = '#1f8fd6'; x.beginPath(); x.arc(M + 2.5, cyy - 3.5, 2.5, 0, 7); x.fill(); txt(c, M + 12, cyy, '#33405e', 400, 10.2); cyy += 16; });
       var by = cyy + 10, bh = 92, g2 = x.createLinearGradient(M, 0, XR, 0); g2.addColorStop(0, '#C2268F'); g2.addColorStop(1, '#8d2a9c'); x.fillStyle = g2; rr(x, M, by, XR - M, bh, 16); x.fill();
-      txt('PRÓXIMO PASSO', M + 23, by + 28, '#f8cde8', 700, 8, 'left', 2.4);
-      txt('Peça o seu orçamento personalizado', M + 23, by + 54, '#fff', 800, 17);
-      txt('Diga-nos as peças, cores, quantidades e o logótipo — respondemos com uma proposta visual.', M + 23, by + 74, 'rgba(255,255,255,.92)', 400, 10);
-      var bt2 = 'PEDIR ORÇAMENTO  →', bw3 = larg(bt2, 800, 10.5, 1.2) + 34; x.fillStyle = '#fff'; rr(x, XR - 23 - bw3, by + (bh - 30) / 2, bw3, 30, 15); x.fill();
+      txt(link ? 'NÃO ENCONTRA O QUE PROCURA?' : 'PRÓXIMO PASSO', M + 23, by + 28, '#f8cde8', 700, 8, 'left', 2.4);
+      txt(link ? 'Peça outros modelos' : 'Peça o seu orçamento personalizado', M + 23, by + 54, '#fff', 800, 17);
+      txt(link ? 'Diga-nos o que precisa — juntamos as opções ao seu catálogo, sempre no mesmo link.' : 'Diga-nos as peças, cores, quantidades e o logótipo — respondemos com uma proposta visual.', M + 23, by + 74, 'rgba(255,255,255,.92)', 400, 10);
+      var bt2 = link ? 'PEDIR OUTROS MODELOS  →' : 'PEDIR ORÇAMENTO  →', bw3 = larg(bt2, 800, 10.5, 1.2) + 34; x.fillStyle = '#fff'; rr(x, XR - 23 - bw3, by + (bh - 30) / 2, bw3, 30, 15); x.fill();
       txt(bt2, XR - 23 - bw3 + 17, by + bh / 2 + 4, '#9b1c72', 800, 10.5, 'left', 1.2);
       var cv = pags[pags.length - 1]; (cv._links = cv._links || []).push({ x: M, y: by, w: XR - M, h: bh,
-        url: 'mailto:joaoinovastamp@gmail.com?subject=' + encodeURIComponent('Pedido de orçamento — ' + tit + (cliente ? ' (' + cliente + ')' : '')) });
+        url: link ? link + '#pedido' : 'mailto:joaoinovastamp@gmail.com?subject=' + encodeURIComponent('Pedido de orçamento — ' + tit + (cliente ? ' (' + cliente + ')' : '')) });
     }
   });
   rodape();
@@ -1050,17 +1088,33 @@ function catCriar() {
   CAT.titulo = $('catT').value.trim(); CAT.cliente = $('catC').value.trim();
   $('catZona').innerHTML = '<div class="card mut" style="text-align:center">A preparar o catálogo…</div>';
   var refs = CAT.itens.map(function (x) { return x.ref; });
-  call('apiCatalogoDados', refs).then(function (D) {
-    return catRecursos(D, CAT.cliente).then(function (R) { return Promise.all(catDesenhar(D, R, CAT.titulo, CAT.cliente).map(canvasJpeg)); });
+  call('apiCatSalvar', { id: CAT.id, titulo: CAT.titulo, cliente: CAT.cliente, refs: refs }).then(function (g) {
+    CAT.id = g.id; CAT.link = g.link; CAT.versao = g.versao;
+    return call('apiCatalogoDados', refs).then(function (Dd) {
+      return catRecursos(Dd, CAT.cliente).then(function (R) { return Promise.all(catDesenhar(Dd, R, CAT.titulo, CAT.cliente, CAT.link).map(canvasJpeg)); });
+    });
   }).then(function (pgs) {
-    var a = pdfDeJpegs(pgs), d = new Date(), nome = 'Catálogo ' + (CAT.titulo || CAT.cliente || 'INOVASTAMP').replace(/[\\\/:*?"<>|]/g, '').substring(0, 50) + ' ' + d.toISOString().substring(0, 10) + '.pdf';
+    var a = pdfDeJpegs(pgs), nome = 'Catálogo ' + (CAT.titulo || CAT.cliente || 'INOVASTAMP').replace(/[\\\/:*?"<>|]/g, '').substring(0, 50) + ' (' + CAT.id + ').pdf';
     CATPDF = { nome: nome, a: a };
-    semFalha(call('apiCatalogoGuardar', nome, b64DeBytes(a)));
-    var pode = false; try { pode = navigator.canShare && navigator.canShare({ files: [new File([a], nome, { type: 'application/pdf' })] }); } catch (e) {}
-    $('catZona').innerHTML = '<div class="card"><div class="ok-t">✓ ' + esc(nome) + ' (guardado no Drive)</div><div class="acts"><button class="btn sec" onclick="catAbrir()">Abrir PDF</button>' +
-      (pode ? '<button class="btn wa" onclick="catPartilhar()">Partilhar</button>' : '') + '</div></div>';
-  }, function () { $('catZona').innerHTML = ''; });
+    return call('apiCatPdf', CAT.id, b64DeBytes(a)).then(function () {
+      CATLST = null; catCarregarListas();
+      var pode = false; try { pode = navigator.canShare && navigator.canShare({ files: [new File([a], nome, { type: 'application/pdf' })] }); } catch (e) {}
+      $('catZona').innerHTML = '<div class="card"><div class="ok-t">✓ ' + esc(CAT.id) + ' · versão ' + CAT.versao + ' guardada</div>' +
+        '<div class="mut" style="margin-top:4px">O link do cliente já mostra esta versão. No PDF, o botão "Pedir outros modelos" abre esse link.</div>' +
+        '<div class="acts"><button class="btn wa" onclick="catPartilharLink()">Enviar link</button><button class="btn sec" onclick="catCopiarLink()">Copiar link</button></div>' +
+        '<div class="acts"><button class="btn sec" onclick="catAbrir()">Abrir PDF</button>' + (pode ? '<button class="btn sec" onclick="catPartilhar()">Partilhar PDF</button>' : '') + '</div></div>';
+      desenharCatalogoTopo();
+    });
+  }).catch(function () { $('catZona').innerHTML = ''; });
 }
+function desenharCatalogoTopo() { var z = $('catZona').innerHTML; desenharCatalogo(); $('catZona').innerHTML = z; }
+function catTextoLink() { return 'Bom dia' + (CAT.cliente ? ' ' + CAT.cliente : '') + ', segue o catálogo que preparámos' + (CAT.titulo ? ' (' + CAT.titulo + ')' : '') + ': ' + CAT.link +
+  '\nSe precisar de outros modelos, basta pedir no fim da página — juntamos as opções e o link fica atualizado. INOVASTAMP'; }
+function catPartilharLink() {
+  if (navigator.share) navigator.share({ text: catTextoLink(), title: 'Catálogo INOVASTAMP' }).catch(function () {});
+  else window.open('https://wa.me/?text=' + encodeURIComponent(catTextoLink()), '_blank');
+}
+function catCopiarLink() { try { navigator.clipboard.writeText(CAT.link).then(function () { msg('Link copiado.'); }); } catch (e) { prompt('Link do catálogo:', CAT.link); } }
 function catAbrir() {
   var url = URL.createObjectURL(new Blob([CATPDF.a], { type: 'application/pdf' }));
   var l = document.createElement('a'); l.href = url; l.download = CATPDF.nome; l.target = '_blank'; document.body.appendChild(l); l.click(); l.remove();
