@@ -678,6 +678,7 @@ function desenharEditor() {
   h += '<div class="card" id="eTot"></div><div id="eLucro"></div>';
   h += '<div class="acts"><button class="btn sec" onclick="calcular(false)">Calcular</button><button class="btn ok" onclick="calcular(true)">Guardar + PDF</button></div><div id="eDepois"></div>';
   $('main').innerHTML = h; desenharLinhas(); desenharTotais();
+  if (!TAMS) semFalha(call('apiTamanhos')).then(function (t) { if (t) { TAMS = t; if ($('eLinhas')) desenharLinhas(); } });
 }
 function desenharLinhas() {
   var p = D.pers;
@@ -687,9 +688,9 @@ function desenharLinhas() {
     return '<div class="card"><div class="row">' + foto(l.ref) + '<button class="prod-btn sp" onclick="escolherProduto(' + i + ')">' + esc(l.produto) + '</button><button class="x" onclick="tirar(' + i + ')">✕</button></div>' +
       '<div class="g3"><div><label>Cor</label>' + (cores.length ? '<select onchange="ED.linhas[' + i + '].cor=this.value;mudou()">' + opts(cores, l.cor, '—') + '</select>'
         : '<input value="' + esc(l.cor) + '" onchange="ED.linhas[' + i + '].cor=this.value;mudou()">') + '</div>' +
-      '<div><label>Quantidade</label><input type="number" inputmode="numeric" min="1" value="' + esc(l.qtd) + '" onchange="ED.linhas[' + i + '].qtd=Number(this.value)||\'\';mudou();verTam(' + i + ')"></div>' +
+      '<div><label>Quantidade</label><input id="q' + i + '" type="number" inputmode="numeric" min="1" value="' + esc(l.qtd) + '" onchange="ED.linhas[' + i + '].qtd=Number(this.value)||\'\';mudou();verTam(' + i + ')"></div>' +
       '<div><label>Margem %</label><input type="number" step="1" value="' + esc(l.margemAj) + '" placeholder="' + (c && c.margem !== '' ? pct(c.margem) : 'tabela') + '" onchange="ED.linhas[' + i + '].margemAj=this.value===\'\'?\'\':Number(this.value);mudou()"></div></div>' +
-      '<label>Tamanhos <span class="mut">(opcional · ex.: S:2 M:5 L:3)</span></label><input value="' + esc(l.tam || '') + '" placeholder="S:2 M:5 L:3" autocapitalize="characters" onchange="ED.linhas[' + i + '].tam=this.value.trim();verTam(' + i + ')">' +
+      '<label>Tamanhos <span class="mut">(opcional · a quantidade passa a ser a soma)</span></label>' + gradeTam(l, i) +
       '<div id="tam' + i + '">' + infoTam(l) + '</div>' +
       '<div class="g2"><div><label>Personalização 1</label><select onchange="ED.linhas[' + i + '].pers1=this.value;mudou()">' + opts(p, l.pers1, '—') + '</select></div>' +
       '<div><label>Personalização 2</label><select onchange="ED.linhas[' + i + '].pers2=this.value;mudou()">' + opts(p, l.pers2, '—') + '</select></div></div>' +
@@ -731,6 +732,30 @@ function infoTam(l) {
   if (!t.length) return '<div class="alerta">Não percebi os tamanhos. Escreve assim: S:2 M:5 L:3</div>';
   if (l.qtd && soma !== Number(l.qtd)) return '<div class="alerta">Os tamanhos somam ' + soma + ' pç e a quantidade é ' + l.qtd + '.</div>';
   return '<div class="ok-t">✓ ' + t.map(function (x) { return x.tam + ': ' + x.qtd; }).join(' · ') + '</div>';
+}
+var TAM_PADRAO = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL'];
+function tamLista(l) {
+  var t = (typeof tamanhosDe === 'function' ? tamanhosDe(l.ref) : []) || [];
+  t = t.map(function (x) { return String(x).toUpperCase().trim(); }).filter(String);
+  if (!t.length) t = TAM_PADRAO.slice();
+  lerTam(l.tam).forEach(function (x) { if (t.indexOf(x.tam) < 0) t.push(x.tam); });   // tamanhos já escritos que não estejam na lista
+  return t;
+}
+function gradeTam(l, i) {
+  var m = {}; lerTam(l.tam).forEach(function (x) { m[x.tam] = (m[x.tam] || 0) + x.qtd; });
+  return '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">' + tamLista(l).map(function (t) {
+    return '<div style="width:58px;text-align:center"><div style="font-size:11px;font-weight:700;color:#56607a">' + esc(t) + '</div>' +
+      '<input type="number" inputmode="numeric" min="0" style="text-align:center;padding:8px 4px" value="' + (m[t] || '') + '" onchange="tamGrade(' + i + ',' + js(t) + ',this.value)"></div>';
+  }).join('') + '</div>';
+}
+function tamGrade(i, t, v) {
+  var l = ED.linhas[i], m = {}, ordem = tamLista(l);
+  lerTam(l.tam).forEach(function (x) { m[x.tam] = (m[x.tam] || 0) + x.qtd; });
+  m[t] = Math.max(0, Math.round(Number(v) || 0));
+  var partes = ordem.filter(function (k) { return m[k] > 0; }), soma = 0;
+  l.tam = partes.map(function (k) { soma += m[k]; return k + ':' + m[k]; }).join(' ');
+  if (soma > 0 && soma !== Number(l.qtd)) { l.qtd = soma; var q = $('q' + i); if (q) q.value = soma; if (CALC) { CALC = null; desenharTotais(); } }
+  verTam(i);
 }
 function verTam(i) { var e = $('tam' + i); if (e) e.innerHTML = infoTam(ED.linhas[i]); }
 function margemTodos(v) {
