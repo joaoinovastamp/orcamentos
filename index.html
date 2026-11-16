@@ -400,7 +400,7 @@ function orcDesenhar(o, R) {
   // introdução
   var y = 300; fnt(400, 11); var intro = 'Obrigado pelo interesse. Segue a nossa proposta para ' + (marca || cli) + ', com as peças, as cores e a personalização indicadas. Os preços por unidade já incluem IVA — em cada artigo indicamos o preço da peça e de cada personalização.';
   linhas(x, intro, XR - M).forEach(function (s) { txt(s, M, y, '#4a5570', 400, 11); y += 17; });
-  function cabTabela(Y) { txt('ARTIGO', M + FW + 24, Y, '#8a93a8', 700, 8, 'left', 2); txt('QTD.', 540, Y, '#8a93a8', 700, 8, 'right', 2); txt('PREÇO UN. C/ IVA', 632, Y, '#8a93a8', 700, 8, 'right', 2); txt('TOTAL', XR, Y, '#8a93a8', 700, 8, 'right', 2);
+  function cabTabela(Y) { txt('ARTIGO', M + FW + 24, Y, '#8a93a8', 700, 8, 'left', 2); txt('QTD.', 540, Y, '#8a93a8', 700, 8, 'right', 2); txt('PREÇO UN.', 632, Y, '#8a93a8', 700, 8, 'right', 2); txt('TOTAL C/ IVA', XR, Y, '#8a93a8', 700, 8, 'right', 2);
     x.fillStyle = '#14213D'; x.fillRect(M, Y + 10, XR - M, 1.5); return Y + 12; }
   y = cabTabela(y + 18);
   function rodape() {
@@ -437,21 +437,21 @@ function orcDesenhar(o, R) {
       chips.forEach(function (c) { var w = larg(c.t, c.opc ? 800 : 600, 9) + (c.c ? 24 : 14); if (chx + w > 480) return; if (c.opc) { x.fillStyle = '#C2268F'; rr(x, chx, chy, w, 17, 8.5); x.fill(); txt(c.t, chx + 7, chy + 12, '#fff', 800, 9); chx += w + 5; return; } x.strokeStyle = '#d5dae5'; x.lineWidth = 1; rr(x, chx, chy, w, 17, 8.5); x.stroke();
         if (c.c) { x.fillStyle = c.c; x.beginPath(); x.arc(chx + 10, chy + 8.5, 4, 0, 7); x.fill(); x.strokeStyle = '#b9c0cc'; x.lineWidth = .6; x.stroke(); }
         txt(c.t, chx + (c.c ? 18 : 7), chy + 12, '#33405e', 600, 9); chx += w + 5; });
-      var py = chy + (compacto ? 28 : 30), partes = partesDe(l), q = Number(l.qtd) || 0, yy = py;
+      var py = chy + (compacto ? 28 : 30), partes = partesDe(l), qn = Number(l.qtd) || 0, yy = py;
       partes.forEach(function (pt) {   // uma linha por parte: preço por unidade e depois o total das unidades
         x.fillStyle = pt.peca ? '#1f8fd6' : '#C2268F'; x.beginPath(); x.arc(tx + 3.5, yy - 3.5, 3.5, 0, 7); x.fill();
         var lab = (pt.peca ? '' : 'Personalização: ') + pt.t + (pt.peca && partes.length === 1 ? ' · sem personalização' : ''); fnt(600, 10); lab = linhas(x, lab, 470 - tx - 20)[0];
         txt(lab, tx + 12, yy, '#14213D', 600, 10);
         x.fillStyle = '#dde1ea'; var lx = tx + 12 + larg(lab, 600, 10) + 6; for (var dx = lx; dx < 512; dx += 4) x.fillRect(dx, yy - 2, 1.4, 1);
-        txt(String(q), 540, yy, '#33405e', 600, 10.5, 'right');
+        txt(String(qn), 540, yy, '#33405e', 600, 10.5, 'right');
         txt(orcEur(pt.v), 632, yy, '#33405e', 600, 10.5, 'right');
-        txt(orcEur(Math.round(pt.v * q * 100) / 100), XR, yy, '#33405e', 600, 10.5, 'right');
+        txt(orcEur(Math.round(pt.v * qn * 100) / 100), XR, yy, '#33405e', 600, 10.5, 'right');
         yy += 15;
       });
       if (partes.length > 1) {   // total do artigo
         x.fillStyle = '#c9cfdb'; x.fillRect(tx, yy - 11, XR - tx, 1);
         txt('Total do artigo', tx + 12, yy + 1, '#14213D', 800, 10.5);
-        txt(String(q), 540, yy + 1, '#14213D', 800, 11, 'right');
+        txt(String(qn), 540, yy + 1, '#14213D', 800, 11, 'right');
         txt(orcEur(l.unitC), 632, yy + 1, '#14213D', 800, 11, 'right');
         txt(orcEur(l.totC), XR, yy + 1, '#14213D', 900, 12, 'right');
       }
