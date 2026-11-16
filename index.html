@@ -361,6 +361,17 @@ function orcDesenhar(o, R) {
   var nPecas = 0, soma = 0; o.linhas.forEach(function (l) { nPecas += Number(l.qtd) || 0; soma += Number(l.totS) || 0; });
   var cli = String(o.cliente || '').toUpperCase(), marca = marcaCli(cli);
   var compacto = o.linhas.length > 3, RH = compacto ? 92 : 112, FH = compacto ? 76 : 94, FW = compacto ? 70 : 88;
+  function temPers(n) { n = String(n || '').trim(); return n && n !== 'Sem personalização'; }
+  function partesDe(l) {   // linhas de preço c/ IVA: a peça e cada personalização
+    var nm = propNomes(l.produto, l.ref), ps = [];
+    var pc = l.pecaC !== undefined && l.pecaC !== '' ? Number(l.pecaC) : Number(l.unitC) || 0;
+    ps.push({ t: nm.s ? String(nm.s) : 'Peça', v: pc, peca: true });
+    if (temPers(l.pers1)) ps.push({ t: String(l.pers1), v: Number(l.pers1C) || 0 });
+    if (temPers(l.pers2)) ps.push({ t: String(l.pers2), v: Number(l.pers2C) || 0 });
+    return ps;
+  }
+  var maxPartes = 1; o.linhas.forEach(function (l) { maxPartes = Math.max(maxPartes, partesDe(l).length); });
+  RH += (maxPartes - 1) * 14;
   var rodapeY = PH - 48, resumoH = 330;
   var npag = 1, pg = 1;
   // ---------- página 1: cabeçalho ----------
@@ -380,7 +391,7 @@ function orcDesenhar(o, R) {
   [['Data', orcData(o.data)], ['Válido até', orcData(o.data, o.validade || 30)], ['Peças', nPecas + (nPecas === 1 ? ' unidade' : ' unidades')], ['Contacto', 'Hugo · INOVASTAMP']].forEach(function (m, i) {
     var X = M + i * 174; txt(m[0].toUpperCase(), X, 232, '#aab6d3', 600, 8, 'left', 2); txt(m[1], X, 249, '#fff', 600, 11.5); });
   // introdução
-  var y = 300; fnt(400, 11); var intro = 'Obrigado pelo interesse. Segue a nossa proposta para ' + (marca || cli) + ', com as peças, as cores e a personalização indicadas. Os valores são por unidade e não incluem IVA.';
+  var y = 300; fnt(400, 11); var intro = 'Obrigado pelo interesse. Segue a nossa proposta para ' + (marca || cli) + ', com as peças, as cores e a personalização indicadas. Os preços por unidade já incluem IVA — em cada artigo indicamos o preço da peça e de cada personalização.';
   linhas(x, intro, XR - M).forEach(function (s) { txt(s, M, y, '#4a5570', 400, 11); y += 17; });
   function cabTabela(Y) { txt('ARTIGO', M + FW + 24, Y, '#8a93a8', 700, 8, 'left', 2); txt('QTD.', 540, Y, '#8a93a8', 700, 8, 'right', 2); txt('PREÇO UN.', 632, Y, '#8a93a8', 700, 8, 'right', 2); txt('TOTAL', XR, Y, '#8a93a8', 700, 8, 'right', 2);
     x.fillStyle = '#14213D'; x.fillRect(M, Y + 10, XR - M, 1.5); return Y + 12; }
@@ -419,29 +430,35 @@ function orcDesenhar(o, R) {
       chips.forEach(function (c) { var w = larg(c.t, 600, 9) + (c.c ? 24 : 14); if (chx + w > 480) return; x.strokeStyle = '#d5dae5'; x.lineWidth = 1; rr(x, chx, chy, w, 17, 8.5); x.stroke();
         if (c.c) { x.fillStyle = c.c; x.beginPath(); x.arc(chx + 10, chy + 8.5, 4, 0, 7); x.fill(); x.strokeStyle = '#b9c0cc'; x.lineWidth = .6; x.stroke(); }
         txt(c.t, chx + (c.c ? 18 : 7), chy + 12, '#33405e', 600, 9); chx += w + 5; });
-      var pers = [l.pers1, l.pers2].filter(function (s) { return String(s || '').trim(); }).join(' + ');
-      var py = chy + (compacto ? 31 : 34);
-      x.fillStyle = pers ? '#C2268F' : '#c6ccd9'; x.beginPath(); x.arc(tx + 3.5, py - 3.5, 3.5, 0, 7); x.fill();
-      var ptxt = pers ? 'Personalização: ' + pers : 'Sem personalização'; fnt(600, 10); ptxt = linhas(x, ptxt, tw - 12)[0];
-      txt(ptxt, tx + 12, py, pers ? '#14213D' : '#8a93a8', 600, 10);
+      var py = chy + (compacto ? 31 : 34), partes = partesDe(l);
+      partes.forEach(function (pt, k2) {
+        var yy = py + k2 * 14, val = orcEur(pt.v) + (pt.peca ? '' : ''), vw = larg(val, 700, 10);
+        x.fillStyle = pt.peca ? '#1f8fd6' : '#C2268F'; x.beginPath(); x.arc(tx + 3.5, yy - 3.5, 3.5, 0, 7); x.fill();
+        var lab = (pt.peca ? '' : 'Personalização: ') + pt.t; fnt(600, 10); lab = linhas(x, lab, tw - 12 - vw - 14)[0];
+        txt(lab, tx + 12, yy, '#14213D', 600, 10);
+        x.fillStyle = '#d5dae5'; var lx = tx + 12 + larg(lab, 600, 10) + 6, rx = tx + tw - vw - 6; for (var dx = lx; dx < rx; dx += 4) x.fillRect(dx, yy - 2, 1.4, 1);
+        txt(val, tx + tw, yy, '#14213D', 700, 10, 'right');
+      });
+      if (partes.length === 1) txt('Sem personalização', tx + 12, py + 14, '#8a93a8', 500, 9);
       var my = cy + FH / 2 + 4;
       txt(String(l.qtd), 540, my, '#14213D', 600, 12, 'right');
-      txt(orcEur(l.unitS), 632, my - 3, '#14213D', 600, 12, 'right');
-      txt(Number(l.persU) > 0 ? 'peça + personalização' : 'por unidade', 632, my + 10, '#8a93a8', 500, 8, 'right');
-      txt(orcEur(l.totS), XR, my, '#14213D', 800, 13.5, 'right');
+      txt(orcEur(l.unitC), 632, my - 3, '#14213D', 700, 12, 'right');
+      txt(partes.length > 1 ? 'c/ IVA · peça + pers.' : 'c/ IVA', 632, my + 10, '#8a93a8', 500, 8, 'right');
+      txt(orcEur(l.totC), XR, my - 3, '#14213D', 800, 13.5, 'right');
+      txt('c/ IVA', XR, my + 10, '#8a93a8', 500, 8, 'right');
       y += RH; x.fillStyle = '#e6e9f0'; x.fillRect(M, y, XR - M, 1);
     }
     if (p === dist.length - 1) {
       // ---------- resumo: condições + totais ----------
       var ry = y + 24;
       txt('CONDIÇÕES', M, ry + 8, '#8a93a8', 700, 8, 'left', 2.4);
-      var cond = ['Proposta válida por ' + (o.validade || 30) + ' dias a contar da data.', 'Valores sem IVA; acresce IVA à taxa legal em vigor.',
+      var cond = ['Proposta válida por ' + (o.validade || 30) + ' dias a contar da data.', 'Preços por unidade com IVA incluído (taxa legal em vigor).',
         'Produção após aprovação da maquete; prazo indicado na adjudicação.', 'Tamanhos confirmados por colaborador antes da produção.'];
       if (o.obs) cond.push(String(o.obs));
       var cyy = ry + 28; fnt(400, 10.2);
       cond.forEach(function (c) { linhas(x, c, 360).slice(0, 3).forEach(function (s, i) { if (i === 0) { x.fillStyle = '#1f8fd6'; x.beginPath(); x.arc(M + 2.5, cyy - 3.5, 2.5, 0, 7); x.fill(); } txt(s, M + 12, cyy, '#33405e', 400, 10.2); cyy += 15; }); cyy += 3; });
       var bx = XR - 280, bw = 280, by = ry - 4, desc = soma - (Number(o.tS) || 0), iva = (Number(o.tC) || 0) - (Number(o.tS) || 0);
-      var linhasT = [['Subtotal', orcEur(soma)]]; if (desc > 0.009) linhasT.push(['Desconto' + (o.desconto ? ' ' + Math.round(Number(o.desconto) * (Number(o.desconto) < 1 ? 100 : 1)) + '%' : ''), '− ' + orcEur(desc)]);
+      var linhasT = [['Subtotal s/ IVA', orcEur(soma)]]; if (desc > 0.009) linhasT.push(['Desconto' + (o.desconto ? ' ' + Math.round(Number(o.desconto) * (Number(o.desconto) < 1 ? 100 : 1)) + '%' : ''), '− ' + orcEur(desc)]);
       linhasT.push(['IVA ' + (Number(o.tS) > 0 ? Math.round(iva / Number(o.tS) * 100) : 23) + '%', orcEur(iva)]);
       var bh = linhasT.length * 33 + 16 + 58 + 26;
       x.strokeStyle = '#e1e5ee'; x.lineWidth = 1; rr(x, bx, by, bw, bh, 14); x.stroke();
@@ -449,7 +466,7 @@ function orcDesenhar(o, R) {
       var gy = by + linhasT.length * 33 + 16; x.save(); rr(x, bx, by, bw, bh, 14); x.clip();
       x.fillStyle = '#14213D'; x.fillRect(bx, gy, bw, 58); txt('TOTAL', bx + 19, gy + 35, '#aab6d3', 700, 8.5, 'left', 2.2); txt(orcEur(o.tC), bx + bw - 19, gy + 39, '#fff', 900, 24, 'right', -0.5);
       x.fillStyle = '#fbeef6'; x.fillRect(bx, gy + 58, bw, 26); x.restore();
-      txt(nPecas + ' peças · ≈ ' + orcEur(nPecas ? (Number(o.tS) || 0) / nPecas : 0) + ' por peça + IVA', bx + bw - 19, gy + 75, '#9b1c72', 600, 9.5, 'right');
+      txt(nPecas + ' peças · ≈ ' + orcEur(nPecas ? (Number(o.tC) || 0) / nPecas : 0) + ' por peça c/ IVA', bx + bw - 19, gy + 75, '#9b1c72', 600, 9.5, 'right');
       // ---------- próximo passo ----------
       var pyy = rodapeY - 22 - 132, ph = 132;
       var g2 = x.createLinearGradient(M, 0, XR, 0); g2.addColorStop(0, '#C2268F'); g2.addColorStop(1, '#8d2a9c'); x.fillStyle = g2; rr(x, M, pyy, XR - M, ph, 16); x.fill();
