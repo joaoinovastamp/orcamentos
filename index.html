@@ -958,7 +958,7 @@ function catDesenharListas() {
   var novos = (CATPED || []).filter(function (p) { return p.estado === 'Novo'; });
   zp.innerHTML = novos.length ? '<h2>Pedidos de clientes (' + novos.length + ')</h2>' + novos.map(function (p) {
     return '<div class="card" style="border-left:4px solid #C2268F"><div class="row"><b class="sp">' + esc(p.cliente || p.cat) + '</b><span class="mut">' + dt(new Date(p.data).toISOString()) + '</span></div>' +
-      (p.itens && p.itens.length ? '<div style="margin:6px 0;font-size:13px;font-weight:700;color:#C2268F">PEDIDO DE ORÇAMENTO</div>' + p.itens.map(function (x) { return '<div class="sel">' + foto(x.ref) + '<div class="sp"><b>' + (x.qtd ? x.qtd + ' × ' : '') + esc(x.nome) + '</b><div class="mut">Ref. ' + esc(x.ref) + (x.cor ? ' · ' + esc(x.cor) : '') + '</div></div></div>'; }).join('') +
+      (p.itens && p.itens.length ? '<div style="margin:6px 0;font-size:13px;font-weight:700;color:#C2268F">PEDIDO DE ORÇAMENTO</div>' + p.itens.map(function (x) { return '<div class="sel">' + foto(x.ref) + '<div class="sp"><b>' + (x.qtd ? x.qtd + ' × ' : '') + esc(x.nome) + '</b><div class="mut">Ref. ' + esc(x.ref) + (x.cor ? ' · ' + esc(x.cor) : '') + '</div>' + catEstStock(x) + '</div></div>'; }).join('') +
         (p.pedido.indexOf(' — ') > 0 ? '<div class="mut" style="margin-top:4px">' + esc(p.pedido.substring(p.pedido.indexOf(' — ') + 3)) + '</div>' : '')
       : '<div style="margin:6px 0;font-size:15px">' + esc(p.pedido) + '</div>') +
       '<div class="mut">' + [p.qtd ? 'Qtd.: ' + esc(p.qtd) : '', p.prazo ? 'Para: ' + esc(p.prazo) : '', p.nome ? esc(p.nome) : '', p.contacto ? esc(p.contacto) : ''].filter(String).join(' · ') + '</div>' +
@@ -979,6 +979,11 @@ function catAbrirId(id) {
   };
   if (CATLST) abre(); else call('apiCatLista').then(function (l) { CATLST = l; abre(); });
 }
+function catEstStock(x) {
+  if (x.encomendar === undefined || !x.qtd) return '';
+  if (!x.encomendar) return '<div style="color:#1E8E5A;font-weight:700;font-size:12px">✓ Em stock (' + x.stock + ') — pode vender já</div>';
+  return '<div style="color:#b45309;font-weight:700;font-size:12px">⚠ ' + (x.stock ? 'Só ' + x.stock + ' em stock — encomendar ' : 'Sem stock — encomendar ') + x.encomendar + ' ao fornecedor</div>';
+}
 function catCriarOrc(row) {
   var p = (CATPED || []).filter(function (x) { return x.row === row; })[0]; if (!p || !p.itens || !p.itens.length) return;
   novo(); fecharModal();
@@ -992,7 +997,9 @@ function catCriarOrc(row) {
     return { produto: catLabel(x.ref), ref: x.ref, cor: cor, qtd: x.qtd || '', tam: x.tam || '', margemAj: '', pers1: '', precoAj1: '', pers2: '', precoAj2: '' };
   });
   CALC = null; desenharEditor(); window.scrollTo(0, 0);
-  msg('Rascunho com os artigos pedidos pelo cliente (catálogo ' + p.cat + '). Junta a personalização, confirma os tamanhos e carrega em Guardar.' + (p.pedido.indexOf(' — ') > 0 ? '\nObservações do cliente: ' + p.pedido.substring(p.pedido.indexOf(' — ') + 3) : ''));
+  var enc = p.itens.filter(function (x) { return x.encomendar; });
+  msg('Rascunho com os artigos pedidos pelo cliente (catálogo ' + p.cat + '). Junta a personalização, confirma os tamanhos e carrega em Guardar.' +
+    (enc.length ? '\n⚠ Encomendar ao fornecedor: ' + enc.map(function (x) { return x.encomendar + ' × ' + x.nome + (x.cor ? ' (' + x.cor + ')' : '') + (x.stock ? ' — há ' + x.stock + ' em stock' : ''); }).join('; ') : '') + (p.pedido.indexOf(' — ') > 0 ? '\nObservações do cliente: ' + p.pedido.substring(p.pedido.indexOf(' — ') + 3) : ''));
   call('apiCatPedidoEstado', row, 'Orçamento criado').then(function () { p.estado = 'Orçamento criado'; });
 }
 function catNovo() { CAT = { itens: [], titulo: '', cliente: '', id: '', link: '', versao: 0 }; desenharCatalogo(); }
@@ -1065,7 +1072,7 @@ function catDesenhar(D, R, titulo, cliente, link) {
       x.restore();
       var pr = it.precos || [], desde = pr.length ? pr[pr.length - 1][0] : 0;
       if (desde) { var bt = 'desde ' + orcEur(desde), bw = larg(bt, 800, 10.5) + 22; x.fillStyle = '#C2268F'; rr(x, X + 12, Y + 12, bw, 24, 12); x.fill(); txt(bt, X + 23, Y + 28, '#fff', 800, 10.5); }
-      if (it.stock > 0) { var sb = 'EM STOCK · ENTREGA RÁPIDA', sw = larg(sb, 800, 9, 0.4) + 20; x.fillStyle = '#1E8E5A'; rr(x, X + CW - 12 - sw, Y + 12, sw, 24, 12); x.fill(); txt(sb, X + CW - 12 - sw / 2, Y + 28, '#fff', 800, 9, 'center', 0.4); }
+      if (it.stock >= 5) { var sb = 'EM STOCK · ENTREGA RÁPIDA', sw = larg(sb, 800, 9, 0.4) + 20; x.fillStyle = '#1E8E5A'; rr(x, X + CW - 12 - sw, Y + 12, sw, 24, 12); x.fill(); txt(sb, X + CW - 12 - sw / 2, Y + 28, '#fff', 800, 9, 'center', 0.4); }
       var nm = propNomes(it.nome || it.ref, it.ref), tt = String(nm.t || it.ref).toUpperCase(), tf = 17; while (larg(tt, 900, tf, -0.3) > CW - 28 && tf > 11) tf--;
       var ty = Y + PHh + 26; txt(tt, X + 14, ty, '#14213D', 900, tf, 'left', -0.3);
       if (nm.s) { fnt(400, 10); txt(linhas(x, nm.s, CW - 28)[0], X + 14, ty + 15, '#4a5570', 400, 10); }
