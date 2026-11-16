@@ -958,9 +958,11 @@ function catDesenharListas() {
   var novos = (CATPED || []).filter(function (p) { return p.estado === 'Novo'; });
   zp.innerHTML = novos.length ? '<h2>Pedidos de clientes (' + novos.length + ')</h2>' + novos.map(function (p) {
     return '<div class="card" style="border-left:4px solid #C2268F"><div class="row"><b class="sp">' + esc(p.cliente || p.cat) + '</b><span class="mut">' + dt(new Date(p.data).toISOString()) + '</span></div>' +
-      '<div style="margin:6px 0;font-size:15px">' + esc(p.pedido) + '</div>' +
+      (p.itens && p.itens.length ? '<div style="margin:6px 0;font-size:13px;font-weight:700;color:#C2268F">PEDIDO DE ORÇAMENTO</div>' + p.itens.map(function (x) { return '<div class="sel">' + foto(x.ref) + '<div class="sp"><b>' + (x.qtd ? x.qtd + ' × ' : '') + esc(x.nome) + '</b><div class="mut">Ref. ' + esc(x.ref) + (x.cor ? ' · ' + esc(x.cor) : '') + '</div></div></div>'; }).join('') +
+        (p.pedido.indexOf(' — ') > 0 ? '<div class="mut" style="margin-top:4px">' + esc(p.pedido.substring(p.pedido.indexOf(' — ') + 3)) + '</div>' : '')
+      : '<div style="margin:6px 0;font-size:15px">' + esc(p.pedido) + '</div>') +
       '<div class="mut">' + [p.qtd ? 'Qtd.: ' + esc(p.qtd) : '', p.prazo ? 'Para: ' + esc(p.prazo) : '', p.nome ? esc(p.nome) : '', p.contacto ? esc(p.contacto) : ''].filter(String).join(' · ') + '</div>' +
-      '<div class="acts"><button class="btn" onclick="catAbrirId(' + js(p.cat) + ')">Abrir o catálogo e juntar modelos</button><button class="btn sec" onclick="catPedidoTratado(' + p.row + ')">Já tratado</button></div></div>';
+      '<div class="acts">' + (p.itens && p.itens.length ? '<button class="btn ok" onclick="catCriarOrc(' + p.row + ')">Criar orçamento (rascunho)</button>' : '<button class="btn" onclick="catAbrirId(' + js(p.cat) + ')">Abrir o catálogo e juntar modelos</button>') + '<button class="btn sec" onclick="catPedidoTratado(' + p.row + ')">Já tratado</button></div></div>';
   }).join('') : '';
   zl.innerHTML = CATLST && CATLST.length ? '<h2>Catálogos guardados</h2><div class="card">' + CATLST.map(function (c) {
     return '<div class="sel"><div class="sp"><b>' + esc(c.titulo || 'Catálogo') + '</b>' + (c.cliente ? ' · ' + esc(c.cliente) : '') +
@@ -976,6 +978,22 @@ function catAbrirId(id) {
     desenharCatalogo(); window.scrollTo(0, 0);
   };
   if (CATLST) abre(); else call('apiCatLista').then(function (l) { CATLST = l; abre(); });
+}
+function catCriarOrc(row) {
+  var p = (CATPED || []).filter(function (x) { return x.row === row; })[0]; if (!p || !p.itens || !p.itens.length) return;
+  novo(); fecharModal();
+  var c = (D.clientes || []).filter(function (x) { return x[0].toLowerCase() === String(p.cliente || '').toLowerCase(); })[0];
+  ED.cliente = c ? c[0] : (p.cliente || p.nome || '');
+  if (c) { ED.nif = c[1] || ''; ED.email = c[2] || ''; ED.tel = c[3] || ''; ED.morada = c[4] || ''; ED.cp = c[5] || ''; }
+  if (/@/.test(p.contacto || '')) { if (!ED.email) ED.email = p.contacto; } else if (p.contacto && !ED.tel) ED.tel = p.contacto;
+  ED.linhas = p.itens.map(function (x) {
+    var cor = '', alvo = norm(x.cor || '');
+    if (alvo) coresDe(x.ref).some(function (o) { var n = norm(o[0]); if (n === alvo || n.indexOf(alvo) >= 0 || alvo.indexOf(n) >= 0) { cor = o[0]; return true; } return false; });
+    return { produto: catLabel(x.ref), ref: x.ref, cor: cor, qtd: x.qtd || '', tam: x.tam || '', margemAj: '', pers1: '', precoAj1: '', pers2: '', precoAj2: '' };
+  });
+  CALC = null; desenharEditor(); window.scrollTo(0, 0);
+  msg('Rascunho com os artigos pedidos pelo cliente (catálogo ' + p.cat + '). Junta a personalização, confirma os tamanhos e carrega em Guardar.' + (p.pedido.indexOf(' — ') > 0 ? '\nObservações do cliente: ' + p.pedido.substring(p.pedido.indexOf(' — ') + 3) : ''));
+  call('apiCatPedidoEstado', row, 'Orçamento criado').then(function () { p.estado = 'Orçamento criado'; });
 }
 function catNovo() { CAT = { itens: [], titulo: '', cliente: '', id: '', link: '', versao: 0 }; desenharCatalogo(); }
 function catPedidoTratado(row) { call('apiCatPedidoEstado', row, 'Tratado').then(function () { (CATPED || []).forEach(function (p) { if (p.row === row) p.estado = 'Tratado'; }); catDesenharListas(); }); }
@@ -1047,6 +1065,7 @@ function catDesenhar(D, R, titulo, cliente, link) {
       x.restore();
       var pr = it.precos || [], desde = pr.length ? pr[pr.length - 1][0] : 0;
       if (desde) { var bt = 'desde ' + orcEur(desde), bw = larg(bt, 800, 10.5) + 22; x.fillStyle = '#C2268F'; rr(x, X + 12, Y + 12, bw, 24, 12); x.fill(); txt(bt, X + 23, Y + 28, '#fff', 800, 10.5); }
+      if (it.stock > 0) { var sb = 'EM STOCK · ENTREGA RÁPIDA', sw = larg(sb, 800, 9, 0.4) + 20; x.fillStyle = '#1E8E5A'; rr(x, X + CW - 12 - sw, Y + 12, sw, 24, 12); x.fill(); txt(sb, X + CW - 12 - sw / 2, Y + 28, '#fff', 800, 9, 'center', 0.4); }
       var nm = propNomes(it.nome || it.ref, it.ref), tt = String(nm.t || it.ref).toUpperCase(), tf = 17; while (larg(tt, 900, tf, -0.3) > CW - 28 && tf > 11) tf--;
       var ty = Y + PHh + 26; txt(tt, X + 14, ty, '#14213D', 900, tf, 'left', -0.3);
       if (nm.s) { fnt(400, 10); txt(linhas(x, nm.s, CW - 28)[0], X + 14, ty + 15, '#4a5570', 400, 10); }
