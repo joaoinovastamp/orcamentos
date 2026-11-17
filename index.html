@@ -2072,7 +2072,7 @@ function opGerar() {
   if (!sel.length) { msg('Escolhe pelo menos um artigo com personalização.', true); return; }
   $('opRes').innerHTML = '<div class="mut" style="text-align:center;margin-top:8px">A desenhar a ordem de produção…</div>';
   var info;
-  call('apiOPNumero', OP.num).then(function (i) { info = i; return opPaginas(info); }).then(function (pags) { return Promise.all(pags.map(canvasJpeg)); }).then(function (pgs) {
+  Promise.all([call('apiOPNumero', OP.num), semFalha(call('apiProdAbrir', OP.num))]).then(function (r) { info = r[0]; info.maqAp = r[1] && r[1].maqAp || null; return opPaginas(info); }).then(function (pags) { return Promise.all(pags.map(canvasJpeg)); }).then(function (pgs) {
     var bytes = pdfDeJpegs(pgs), nome = 'OP ' + info.op + ' ' + String(OP.o.cliente || '').replace(/[\\\/:*?"<>|]/g, '') + '.pdf';
     OPPDF = { nome: nome, a: bytes }; if (typeof PR !== 'undefined' && PR) PR.op = info.op;
     var pode = false; try { pode = navigator.canShare && navigator.canShare({ files: [new File([bytes], nome, { type: 'application/pdf' })] }); } catch (e) {}
@@ -2112,7 +2112,10 @@ function opDesenhar(o, info, metades, ino) {
     campo('Máquina:', XL, y, W * 0.5 - 6); campo('Data:', XL + W * 0.5 + 6, y, W * 0.5 - 6);
     campo('Operadores:', XL, y + 38, W);
     // desenho: posição na peça (esq.) + desenho grande (dir.)
-    y = 238; txt('DESENHO A ESTAMPAR', XL, y, '#8a93a8', 700, 8, 'left', 2.2); y += 8;
+    y = 238; txt('DESENHO A ESTAMPAR', XL, y, '#8a93a8', 700, 8, 'left', 2.2);
+    var ap = info.maqAp || {}, okM = ap.estado === 'Aprovada', tA = okM ? '✓ MAQUETE APROVADA' + (ap.data ? ' · ' + String(ap.data).substring(0, 10) : '') : (ap.estado === 'Alterações pedidas' ? '✎ CLIENTE PEDIU ALTERAÇÕES' : '⚠ MAQUETE POR APROVAR'), wA = larg(tA, 800, 8.5) + 18;
+    caixa(XR - wA, y - 12, wA, 17, 8.5, okM ? '#1f8a4c' : '#c2410c'); txt(tA, XR - wA / 2, y, '#fff', 800, 8.5, 'center', 0.6);
+    y += 8;
     var hD = 262, wM = 170, mq = m.mq;
     caixa(XL, y, wM, hD, 10, '#f3f5f9'); if (m.mock) cabe(m.mock, XL + 6, y + 6, wM - 12, hD - 30); else txt('sem maquete', XL + wM / 2, y + hD / 2, '#8a93a8', 600, 10, 'center');
     txt('POSIÇÃO NA PEÇA', XL + wM / 2, y + hD - 9, '#4a5570', 700, 8, 'center', 1.5);
@@ -2568,9 +2571,16 @@ function infoMaqProd(p) {
   var a = p.maqAp || {}, e = a.estado || '';
   if (e === 'Aprovada') return '<div class="ok-t">✅ Maquete aprovada pelo cliente' + (a.data ? ' em ' + esc(a.data) : '') + (a.nome ? ' (' + esc(a.nome) + ')' : '') + ' — vai na ficha.</div>';
   if (e === 'Alterações pedidas') return '<div class="alerta">✎ O cliente pediu alterações' + (a.data ? ' (' + esc(a.data) + ')' : '') + (a.comentario ? ': "' + esc(a.comentario) + '"' : '') +
-    '</div><div class="mut">Corrige na Maquete, "Guardar maquete no orçamento" e pede de novo a aprovação.</div>';
-  if (e) return '<div class="mut">⏳ Maquete à espera da aprovação do cliente.</div>';
-  return '<div class="mut">✓ Tem maquete — vai na ficha. Ainda não pediste a aprovação ao cliente (botão "Pedir aprovação da maquete").</div>';
+    '</div><div class="mut">Corrige na Maquete, "Guardar maquete no orçamento" e pede de novo a aprovação.</div><div class="acts"><button class="btn sec" onclick="maqAprovarManual()">✓ Marcar maquete como aprovada</button></div>';
+  var bt = '<div class="acts"><button class="btn sec" onclick="maqAprovarManual()">✓ Marcar maquete como aprovada</button></div><div class="mut">Usa quando o cliente aprovou por telefone, WhatsApp ou em pessoa — a ordem de produção sai como validada.</div>';
+  if (e === 'Alterações pedidas') return '';
+  if (e) return '<div class="mut">⏳ Maquete à espera da aprovação do cliente.</div>' + bt;
+  return '<div class="mut">✓ Tem maquete — vai na ficha. Ainda não pediste a aprovação ao cliente (botão "Pedir aprovação da maquete").</div>' + bt;
+}
+function maqAprovarManual() {
+  var via = prompt('Como é que o cliente aprovou a maquete? (ex.: telefone, WhatsApp, email, presencial)', 'WhatsApp'); if (via === null) return;
+  var num = ATUAL.num;
+  call('apiMaqAprovarManual', num, via).then(function () { msg('Maquete de ' + num + ' marcada como aprovada.'); carregarProd(num); });
 }
 function pedirAprovMaq() {
   call('apiMaqAprovacao', ATUAL.num).then(function (r) {
