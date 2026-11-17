@@ -1260,10 +1260,15 @@ function mqCaixaPeca(im) {
   try { x.drawImage(im, 0, 0, W, H); d = x.getImageData(0, 0, W, H).data; } catch (e) { im._bb = null; return null; }
   var br = []; for (var i = 0; i < W; i++) br.push(i, (H - 1) * W + i); for (i = 0; i < H; i++) br.push(i * W, i * W + W - 1);
   var med = [0, 1, 2].map(function (cc) { var a = br.map(function (q) { return d[q * 4 + cc]; }).sort(function (u, v) { return u - v; }); return a[a.length >> 1]; });
-  var col = new Int32Array(W), lin = new Int32Array(H);
-  for (var yy = 0; yy < H; yy++) for (var xx = 0; xx < W; xx++) { var o = (yy * W + xx) * 4; if (d[o + 3] > 30 && Math.abs(d[o] - med[0]) + Math.abs(d[o + 1] - med[1]) + Math.abs(d[o + 2] - med[2]) > 60) { col[xx]++; lin[yy]++; } }
-  var lim = 2, x0 = 0, x1 = W - 1, y0 = 0, y1 = H - 1;
-  while (x0 < W && col[x0] <= lim) x0++; while (x1 > x0 && col[x1] <= lim) x1--; while (y0 < H && lin[y0] <= lim) y0++; while (y1 > y0 && lin[y1] <= lim) y1--;
+  var m = new Uint8Array(W * H);
+  for (var yy = 0; yy < H; yy++) for (var xx = 0; xx < W; xx++) { var o = (yy * W + xx) * 4; if (d[o + 3] > 30 && Math.abs(d[o] - med[0]) + Math.abs(d[o + 1] - med[1]) + Math.abs(d[o + 2] - med[2]) > 60) m[yy * W + xx] = 1; }
+  function md(a) { if (!a.length) return -1; a.sort(function (u, v) { return u - v; }); return a[a.length >> 1]; }
+  // largura: nas linhas da metade de baixo (fora de detalhes/encaixes no topo); altura: nas colunas do meio
+  var es = [], di = [], ci = [], ba = [];
+  for (yy = Math.round(H * 0.5); yy < Math.round(H * 0.8); yy++) { var a0 = -1, a1 = -1; for (xx = 0; xx < W; xx++) if (m[yy * W + xx]) { if (a0 < 0) a0 = xx; a1 = xx; } if (a0 >= 0) { es.push(a0); di.push(a1); } }
+  for (xx = Math.round(W * 0.42); xx < Math.round(W * 0.58); xx++) { var b0 = -1, b1 = -1; for (yy = 0; yy < H; yy++) if (m[yy * W + xx]) { if (b0 < 0) b0 = yy; b1 = yy; } if (b0 >= 0) { ci.push(b0); ba.push(b1); } }
+  var x0 = md(es), x1 = md(di), y0 = md(ci), y1 = md(ba);
+  if (x0 < 0 || y0 < 0) { im._bb = null; return null; }
   im._bb = (x1 - x0 > W * 0.2 && y1 - y0 > H * 0.2) ? [x0 / W, y0 / H, (x1 + 1) / W, (y1 + 1) / H] : null;
   return im._bb;
 }
@@ -1283,7 +1288,7 @@ function mqCostasPara(l, p) {
   if (p && p.C) { POS_K.forEach(function (k) { if (p.C[k] !== undefined) C[k] = p.C[k]; }); return; }
   if (!mqTemCostas(l)) { C.des = null; C.orig = null; C.src = null; return; }
   if (!C.des) { var b = MQ.logoBase || (MQ.L.F.des ? MQ.L.F : null); if (b) { C.orig = b.orig; C.des = b.des; C.src = b.src; C.nome = b.nome; C.tipo = b.tipo; } }
-  C.x = 0.5; C.y = 0.40; C.wcm = 25; C.rot = 0;
+  C.x = 0.5; C.y = 0.32; C.wcm = 25; C.rot = 0;
 }
 function mqImgLado(l, W, H) {
   var c = document.createElement('canvas'); c.width = W; c.height = H; var x = c.getContext('2d'), fv = MQ.fv, vi = MQ.vista, la = MQ.lado;
@@ -1302,7 +1307,7 @@ function mqDadosLados() {
     c.width = Math.round(d.width * k); c.height = Math.round(d.height * k); c.getContext('2d').drawImage(d, 0, 0, c.width, c.height);
     var hcm = L.wcm * d.height / d.width, tpl = true;
     r.lados[l] = { mock: mock, des: c.toDataURL('image/png'), wcm: Math.round(L.wcm * 10) / 10, hcm: Math.round(hcm * 10) / 10, x: L.x, y: L.y, rot: L.rot || 0,
-      gola: tpl ? Math.round((L.y * 52 / 0.56 - hcm / 2) * 10) / 10 : null, meio: tpl ? Math.round((L.x - 0.5) * 52 * 10) / 10 : null }; });
+      gola: tpl ? Math.round(L.y * 70 - hcm / 2) : null, meio: tpl ? Math.round((L.x - 0.5) * 52 * 10) / 10 : null }; });
   mqDesenhar(); return r;
 }
 function mqComposta() {
@@ -2038,8 +2043,9 @@ function opDesenhar(o, info, metades, ino) {
     if (mq) {
       var med = 'Largura ' + fmtCm(mq.wcm) + ' cm  ×  Altura ' + fmtCm(mq.hcm) + ' cm';
       txt(med, XL, y, '#14213D', 900, 14);
-      var ex = []; if (mq.gola != null) ex.push('topo a ' + fmtCm(Math.max(0, mq.gola)) + ' cm da gola');
-      if (mq.meio != null) ex.push(Math.abs(mq.meio) < 0.6 ? 'centrado' : fmtCm(Math.abs(mq.meio)) + ' cm à ' + (mq.meio < 0 ? (lado === 'C' ? 'esquerda' : 'direita') + ' de quem veste' : (lado === 'C' ? 'direita' : 'esquerda') + ' de quem veste'));
+      var ex = [];
+      if (mq.meio != null) ex.push(Math.abs(mq.meio) < 0.6 ? 'centrado' : 'lado ' + (mq.meio < 0 ? (lado === 'C' ? 'esquerdo' : 'direito') : (lado === 'C' ? 'direito' : 'esquerdo')) + ' de quem veste (centro a ' + fmtCm(Math.round(Math.abs(mq.meio))) + ' cm do meio)');
+      if (mq.gola != null) ex.push('topo a ≈ ' + Math.max(0, Math.round(mq.gola)) + ' cm da gola');
       if (mq.rot) ex.push('rodado ' + mq.rot + '°');
       if (ex.length) txt(ex.join(' · '), XL, y + 17, '#4a5570', 600, 10.5);
     } else txt('Sem maquete: confirmar medidas e posição antes de estampar.', XL, y, '#b45309', 700, 11);
@@ -2129,7 +2135,7 @@ function mqArtigoOrc(i, primeira) {
   mqGuardarPos();
   MQ.orcI = i; MQ.lab = l.produto; MQ.ref = l.ref; MQ.peca = null; MQ.pecaOrig = null; MQ.pecaC = null; MQ.fv = 'F'; MQ.corOrc = l.cor; MQ.tecOrc = l.pers; mqParaModelo(l);
   var p = MQ.posOrc[l.ref];
-  if (!p && mqTemCostas(l)) { var Lf = MQ.L.F; Lf.x = 0.64; Lf.y = 0.33; Lf.wcm = 9; Lf.rot = 0; }   // frente + costas: frente no peito, costas ao centro
+  if (!p && mqTemCostas(l)) { var Lf = MQ.L.F; Lf.x = MQ.tpl === 'casaco' ? 0.68 : 0.64; Lf.y = 0.30; Lf.wcm = 9; Lf.rot = 0; }   // frente + costas: frente no peito, costas ao centro
   mqCostasPara(l, p);
   if (p) mqPorPos(p);
   else if (!l.pers && MQ.logoBase) { var Lx = MQ.L.F; Lx.orig = null; Lx.des = null; Lx.src = null; }
