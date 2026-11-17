@@ -1288,7 +1288,7 @@ function mqCostasPara(l, p) {
   if (p && p.C) { POS_K.forEach(function (k) { if (p.C[k] !== undefined) C[k] = p.C[k]; }); return; }
   if (!mqTemCostas(l)) { C.des = null; C.orig = null; C.src = null; return; }
   if (!C.des) { var b = MQ.logoBase || (MQ.L.F.des ? MQ.L.F : null); if (b) { C.orig = b.orig; C.des = b.des; C.src = b.src; C.nome = b.nome; C.tipo = b.tipo; } }
-  C.x = 0.5; C.y = 0.32; C.wcm = 25; C.rot = 0;
+  C.x = 0.5; C.y = MQ.tpl === 'hoodie' ? 0.38 : 0.32; C.wcm = 25; C.rot = 0;
 }
 function mqImgLado(l, W, H) {
   var c = document.createElement('canvas'); c.width = W; c.height = H; var x = c.getContext('2d'), fv = MQ.fv, vi = MQ.vista, la = MQ.lado;
@@ -1572,48 +1572,123 @@ function escurecer(hex) {
   if (r + g + b < 90) return '#4a4f5a';                      // peças pretas: contorno cinza escuro
   return 'rgb(' + Math.round(r * 0.72) + ',' + Math.round(g * 0.72) + ',' + Math.round(b * 0.72) + ')';
 }
-function caminhoPeca(x, tpl) {
-  var manga = tpl === 'tshirt' || tpl === 'polo' ? 'curta' : 'comprida';
-  x.beginPath();
-  x.moveTo(36, 8); x.lineTo(64, 8);                                   // ombros/gola
-  x.lineTo(80, 13);
-  if (manga === 'curta') { x.lineTo(97, 34); x.lineTo(86, 42); x.lineTo(78, 32); }
-  else { x.lineTo(92, 40); x.lineTo(98, 98); x.lineTo(87, 100); x.lineTo(80, 50); }
-  x.lineTo(78, 108); x.lineTo(22, 108);                               // corpo
-  if (manga === 'curta') { x.lineTo(22, 32); x.lineTo(14, 42); x.lineTo(3, 34); }
-  else { x.lineTo(20, 50); x.lineTo(13, 100); x.lineTo(2, 98); x.lineTo(8, 40); }
-  x.lineTo(20, 13); x.closePath();
-}
+// --- esboços das peças (coordenadas 0–100 na largura; peito de 22 a 78, gola a y=8, bainha a y=108) ---
+// Desenho vetorial com volume: sombra no chão, luz de cima, laterais e mangas mais escuras, costuras pespontadas e detalhes de cada modelo.
+var MOD_P = {
+  curta: {
+    sil: 'M37 7 Q50 19 63 7 L80 12 Q88 15 92 22 L98 34 L86 42 L79 33 Q78 70 79 108 Q50 110 21 108 Q22 70 21 33 L14 42 L2 34 L8 22 Q12 15 20 12 Z',
+    silC: 'M37 7 Q50 11 63 7 L80 12 Q88 15 92 22 L98 34 L86 42 L79 33 Q78 70 79 108 Q50 110 21 108 Q22 70 21 33 L14 42 L2 34 L8 22 Q12 15 20 12 Z',
+    mangas: ['M80 12 Q88 15 92 22 L98 34 L86 42 L79 33 Q77 22 80 12 Z', 'M20 12 Q12 15 8 22 L2 34 L14 42 L21 33 Q23 22 20 12 Z'],
+    cavas: 'M80 12 Q77 22 79 33 M20 12 Q23 22 21 33',
+    pesp: 'M95.6 32.4 L85.2 39.6 M4.4 32.4 L14.8 39.6 M21.4 105 Q50 107 78.6 105',
+    dobras: 'M79 36 Q73 40 69 39 M21 36 Q27 40 31 39 M24 84 Q28 86 26 90 M76 80 Q72 83 74 87'
+  },
+  comprida: {
+    sil: 'M37 7 Q50 19 63 7 L80 12 Q89 15 92 26 Q96 60 98 94 L87 97 Q83 66 79.5 38 L79 108 Q50 110 21 108 L20.5 38 Q17 66 13 97 L2 94 Q4 60 8 26 Q11 15 20 12 Z',
+    silC: 'M37 7 Q50 11 63 7 L80 12 Q89 15 92 26 Q96 60 98 94 L87 97 Q83 66 79.5 38 L79 108 Q50 110 21 108 L20.5 38 Q17 66 13 97 L2 94 Q4 60 8 26 Q11 15 20 12 Z',
+    mangas: ['M80 12 Q89 15 92 26 Q96 60 98 94 L87 97 Q83 66 79.5 38 Q77.5 24 80 12 Z', 'M20 12 Q11 15 8 26 Q4 60 2 94 L13 97 Q17 66 20.5 38 Q22.5 24 20 12 Z'],
+    cavas: 'M80 12 Q77.5 24 79.5 38 M20 12 Q22.5 24 20.5 38',
+    pesp: '',
+    dobras: 'M80 42 Q74 46 70 45 M20 42 Q26 46 30 45 M93 58 Q95.5 60 96 57 M7 58 Q4.5 60 4 57 M94 70 Q96 72 96.6 69 M6 70 Q4 72 3.4 69 M24 86 Q28 88 26 92 M76 82 Q72 85 74 89'
+  }
+};
+function modParte(tpl) { return tpl === 'tshirt' || tpl === 'polo' ? MOD_P.curta : MOD_P.comprida; }
+function caminhoPeca(x, tpl) { var P = modParte(tpl); x.beginPath(); var p = new Path2D(P.sil); x.fill(p); }   // compatibilidade
+function lumCor(hex) { var n = parseInt(String(hex || '#888888').slice(1), 16); return 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255); }
 function desenharModelo(x, ox, oy, w, tpl, cor, lado) {
-  var k = w / 100, cont = escurecer(cor);
-  x.save(); x.translate(ox, oy); x.scale(k, k); x.lineJoin = 'round';
-  if (tpl === 'hoodie') {                                              // capuz por trás
-    x.beginPath(); x.moveTo(34, 12); x.bezierCurveTo(30, -6, 70, -6, 66, 12); x.closePath();
-    x.fillStyle = cor; x.fill(); x.strokeStyle = cont; x.lineWidth = 0.6; x.stroke();
+  var k = w / 100, cont = escurecer(cor), L = lumCor(cor), claro = L > 190, P = modParte(tpl), C = lado === 'C';
+  var casaco = tpl === 'casaco', hood = tpl === 'hoodie';
+  var silTxt = C ? P.silC : P.sil;
+  if (casaco) silTxt = silTxt.replace(C ? 'M37 7 Q50 11 63 7' : 'M37 7 Q50 19 63 7', 'M36 7 Q50 9.5 64 7');   // casaco fechado: decote do colarinho
+  var sil = new Path2D(silTxt);
+  var tom = function (a) { return claro ? 'rgba(40,50,70,' + a + ')' : 'rgba(0,0,0,' + a + ')'; };
+  var luz = function (a) { return 'rgba(255,255,255,' + (claro ? a * 0.5 : a) + ')'; };
+  x.save(); x.translate(ox, oy); x.scale(k, k); x.lineJoin = 'round'; x.lineCap = 'round';
+  // sombra no chão
+  x.save(); var gs = x.createRadialGradient(50, 112, 2, 50, 112, 44); gs.addColorStop(0, 'rgba(15,26,48,.22)'); gs.addColorStop(1, 'rgba(15,26,48,0)');
+  x.fillStyle = gs; x.beginPath(); x.ellipse(50, 112, 44, 4.5, 0, 0, 7); x.fill(); x.restore();
+  // capuz atrás (hoodie de frente)
+  if (hood && !C) { var cap = new Path2D('M33 10 Q29 -7 50 -8 Q71 -7 67 10 Z'); x.fillStyle = cor; x.fill(cap); x.fillStyle = tom(0.22); x.fill(cap); x.strokeStyle = cont; x.lineWidth = 0.5; x.stroke(cap); }
+  // corpo
+  x.save(); x.shadowColor = 'rgba(15,26,48,.25)'; x.shadowBlur = w * 0.035; x.shadowOffsetY = w * 0.012; x.fillStyle = cor; x.fill(sil); x.restore();
+  x.save(); x.clip(sil);
+  var gh = x.createLinearGradient(0, 0, 100, 0);
+  gh.addColorStop(0, tom(0.30)); gh.addColorStop(0.12, tom(0.10)); gh.addColorStop(0.24, tom(0.14)); gh.addColorStop(0.3, tom(0.02)); gh.addColorStop(0.5, luz(0.07)); gh.addColorStop(0.7, tom(0.02)); gh.addColorStop(0.76, tom(0.14)); gh.addColorStop(0.88, tom(0.10)); gh.addColorStop(1, tom(0.30));
+  x.fillStyle = gh; x.fillRect(-5, -12, 110, 130);
+  var gv = x.createLinearGradient(0, 0, 0, 110); gv.addColorStop(0, luz(0.14)); gv.addColorStop(0.3, luz(0)); gv.addColorStop(0.85, tom(0.06)); gv.addColorStop(1, tom(0.16));
+  x.fillStyle = gv; x.fillRect(-5, -12, 110, 130);
+  P.mangas.forEach(function (m, i) { var pm = new Path2D(m), gm = x.createLinearGradient(i ? 20 : 80, 0, i ? 6 : 94, 0); gm.addColorStop(0, tom(0.16)); gm.addColorStop(0.5, tom(0.02)); gm.addColorStop(1, tom(0.12)); x.fillStyle = gm; x.fill(pm); });
+  // dobras suaves
+  var dob = new Path2D(P.dobras); x.strokeStyle = tom(0.16); x.lineWidth = 1.1; x.stroke(dob);
+  x.save(); x.translate(0.5, 0.6); x.strokeStyle = luz(0.10); x.lineWidth = 0.6; x.stroke(dob); x.restore();
+  x.restore();
+  // contorno e cavas
+  x.strokeStyle = cont; x.lineWidth = 0.45; x.stroke(sil);
+  var cav = new Path2D(P.cavas); x.strokeStyle = tom(0.35); x.lineWidth = 0.4; x.stroke(cav);
+  function pesponto(d, dx) { var p = new Path2D(d); x.save(); x.setLineDash([0.9, 0.7]); x.strokeStyle = claro ? 'rgba(60,70,90,.45)' : 'rgba(255,255,255,.28)'; x.lineWidth = 0.28; if (dx) x.translate(dx, 0); x.stroke(p); x.restore(); }
+  function costura(d) { var p = new Path2D(d); x.strokeStyle = tom(0.32); x.lineWidth = 0.4; x.stroke(p); }
+  function faixa(d, a) { var p = new Path2D(d); x.fillStyle = tom(a || 0.14); x.fill(p); x.strokeStyle = tom(0.35); x.lineWidth = 0.35; x.stroke(p); return p; }
+  function riscas(x0, y0, x1, y1, n, dx, dy) { x.strokeStyle = tom(0.18); x.lineWidth = 0.25; x.beginPath(); for (var i = 1; i < n; i++) { var t = i / n; x.moveTo(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t); x.lineTo(x0 + (x1 - x0) * t + dx, y0 + (y1 - y0) * t + dy); } x.stroke(); }
+  pesponto('M80.6 13 Q78.4 24 80.2 37 M19.4 13 Q21.6 24 19.8 37');
+  if (P.pesp) pesponto(P.pesp);
+  if (tpl === 'tshirt' || tpl === 'sweat') {   // gola redonda canelada
+    if (!C) { faixa('M37 7 Q50 19 63 7 L60.6 7.6 Q50 16.4 39.4 7.6 Z', 0.16); x.fillStyle = tom(0.30); x.fill(new Path2D('M39.4 7.6 Q50 16.4 60.6 7.6 Q50 11.5 39.4 7.6 Z')); }
+    else faixa('M37 7 Q50 11 63 7 L61 7.8 Q50 9.6 39 7.8 Z', 0.16);
+    pesponto(C ? 'M38.5 8.6 Q50 10.6 61.5 8.6' : 'M38.6 8.6 Q50 18.6 61.4 8.6');
   }
-  caminhoPeca(x, tpl); x.fillStyle = cor; x.fill(); x.strokeStyle = cont; x.lineWidth = 0.6; x.stroke();
-  x.strokeStyle = cont; x.lineWidth = 0.4;
-  // gola
-  x.beginPath();
-  if (tpl === 'tshirt' || tpl === 'sweat') { if (lado === 'F') { x.moveTo(36, 8); x.quadraticCurveTo(50, 20, 64, 8); } else { x.moveTo(36, 8); x.quadraticCurveTo(50, 12, 64, 8); } x.stroke(); }
   if (tpl === 'polo') {
-    x.moveTo(36, 8); x.lineTo(44, 15); x.lineTo(50, 10); x.lineTo(56, 15); x.lineTo(64, 8); x.stroke();
-    if (lado === 'F') { x.beginPath(); x.rect(47.5, 12, 5, 13); x.stroke(); [16, 21].forEach(function (y) { x.beginPath(); x.arc(50, y, 0.7, 0, 7); x.fillStyle = cont; x.fill(); }); }
+    if (!C) {
+      x.fillStyle = tom(0.3); x.fill(new Path2D('M39 7.5 Q50 12 61 7.5 L57 16 L50 11 L43 16 Z'));
+      var gl = new Path2D('M36 6 Q50 2.5 64 6 L66.5 10.5 L57.5 17.5 L50 11.2 L42.5 17.5 L33.5 10.5 Z'); x.fillStyle = cor; x.fill(gl); x.fillStyle = luz(0.06); x.fill(gl); x.strokeStyle = cont; x.lineWidth = 0.45; x.stroke(gl);
+      pesponto('M35.6 10 L42.6 15.8 M64.4 10 L57.4 15.8');
+      var pl = new Path2D('M47.6 11.5 L52.4 11.5 L52.4 27 L47.6 27 Z'); x.strokeStyle = tom(0.35); x.lineWidth = 0.4; x.stroke(pl); pesponto('M48.2 26.4 L51.8 26.4');
+      [15, 20.5].forEach(function (yb) { x.fillStyle = claro ? '#d9dde5' : 'rgba(255,255,255,.75)'; x.beginPath(); x.arc(50, yb, 0.9, 0, 7); x.fill(); x.strokeStyle = tom(0.4); x.lineWidth = 0.2; x.stroke(); });
+    } else { var glc = new Path2D('M36 6 Q50 2.5 64 6 L65 10 Q50 7.5 35 10 Z'); x.fillStyle = cor; x.fill(glc); x.fillStyle = tom(0.08); x.fill(glc); x.strokeStyle = cont; x.lineWidth = 0.45; x.stroke(glc); pesponto('M35.6 9 Q50 6.6 64.4 9'); }
   }
-  if (tpl === 'hoodie') {
-    x.beginPath();
-    if (lado === 'F') { x.moveTo(36, 8); x.quadraticCurveTo(50, 26, 64, 8); x.stroke(); x.beginPath(); x.moveTo(46, 17); x.lineTo(45, 30); x.moveTo(54, 17); x.lineTo(55, 30); x.stroke();
-      x.beginPath(); x.moveTo(30, 108); x.lineTo(33, 78); x.lineTo(67, 78); x.lineTo(70, 108); x.stroke(); }
-    else { x.moveTo(38, 9); x.quadraticCurveTo(50, 20, 62, 9); x.stroke(); }
+  if (tpl !== 'tshirt' && tpl !== 'polo') {   // punhos e cós canelados (no casaco: punho com velcro e bainha lisa)
+    if (!casaco) {
+      faixa('M97.4 89 L86.6 92 L87 97 L98 94 Z'); faixa('M2.6 89 L13.4 92 L13 97 L2 94 Z');
+      riscas(86.6, 92, 97.4, 89, 9, 0.4, 4.9); riscas(2.6, 89, 13.4, 92, 9, -0.4, 4.9);
+      faixa('M21 102 Q50 104 79 102 L79 108 Q50 110 21 108 Z', 0.12); riscas(21, 102, 79, 102, 40, 0, 6);
+    } else {
+      costura('M97.2 88 L86.5 91'); costura('M2.8 88 L13.5 91'); pesponto('M97.5 90.5 L86.8 93.5 M2.5 90.5 L13.2 93.5');
+      x.fillStyle = tom(0.18); x.fill(new Path2D('M93 89.5 L97.5 88.3 L97.8 92.3 L93.4 93.4 Z')); x.fill(new Path2D('M7 89.5 L2.5 88.3 L2.2 92.3 L6.6 93.4 Z'));
+      pesponto('M21.3 104.6 Q50 106.6 78.7 104.6');
+      x.fillStyle = '#2b2f36'; [[23.5, 106], [76.5, 106]].forEach(function (t) { x.beginPath(); x.ellipse(t[0], t[1] + 1.6, 0.8, 1.3, 0, 0, 7); x.fill(); x.fillRect(t[0] - 0.12, t[1] - 0.4, 0.24, 1.2); });
+    }
   }
-  if (tpl === 'casaco') {
-    x.beginPath(); x.moveTo(34, 8); x.lineTo(36, 2); x.lineTo(64, 2); x.lineTo(66, 8); x.stroke();
-    if (lado === 'F') { x.beginPath(); x.moveTo(50, 6); x.lineTo(50, 108); x.stroke(); x.beginPath(); x.moveTo(28, 70); x.lineTo(36, 82); x.moveTo(72, 70); x.lineTo(64, 82); x.stroke(); }
+  if (hood) {
+    if (!C) {
+      var abre = new Path2D('M37.5 8 Q38 -1 50 -2 Q62 -1 62.5 8 Q50 21 37.5 8 Z'); x.fillStyle = cor; x.fill(abre); x.fillStyle = tom(0.45); x.fill(abre);
+      var bh = new Path2D('M33.5 9.5 Q36 -5.5 50 -6 Q64 -5.5 66.5 9.5 Q60 16 50 21 Q40 16 33.5 9.5 Z M37.5 8 Q50 21 62.5 8 Q62 -1 50 -2 Q38 -1 37.5 8 Z');
+      x.save(); x.fillStyle = cor; x.fill(bh, 'evenodd'); x.fillStyle = luz(0.05); x.fill(bh, 'evenodd'); x.restore(); x.strokeStyle = cont; x.lineWidth = 0.45; x.stroke(bh);
+      pesponto('M35 9.6 Q37.5 -3.6 50 -4.2 Q62.5 -3.6 65 9.6');
+      x.strokeStyle = claro ? '#c9ced8' : 'rgba(235,238,245,.85)'; x.lineWidth = 0.8; x.beginPath(); x.moveTo(45.5, 16.5); x.quadraticCurveTo(44.6, 25, 45.6, 32); x.moveTo(54.5, 16.5); x.quadraticCurveTo(55.4, 25, 54.4, 32); x.stroke();
+      x.fillStyle = claro ? '#9aa3b5' : 'rgba(200,205,215,.9)'; x.fillRect(45, 31.5, 1.2, 2.4); x.fillRect(53.8, 31.5, 1.2, 2.4);
+      var bol = new Path2D('M30.5 101.5 L33.5 77 Q50 75.5 66.5 77 L69.5 101.5 Z'); x.fillStyle = tom(0.05); x.fill(bol); x.strokeStyle = tom(0.3); x.lineWidth = 0.4; x.stroke(bol);
+      pesponto('M31.4 100.8 L34.2 77.8 Q50 76.4 65.8 77.8 L68.6 100.8'); costura('M33.5 77 Q30.6 84 30.8 94 M66.5 77 Q69.4 84 69.2 94');
+    } else {
+      var hb = new Path2D('M34 9 Q31 -4 50 -6 Q69 -4 66 9 Q65.5 27 50 33 Q34.5 27 34 9 Z'); x.save(); x.shadowColor = 'rgba(0,0,0,.25)'; x.shadowBlur = w * 0.02; x.shadowOffsetY = w * 0.006; x.fillStyle = cor; x.fill(hb); x.restore();
+      x.fillStyle = luz(0.06); x.fill(hb); x.strokeStyle = cont; x.lineWidth = 0.45; x.stroke(hb); costura('M50 -6 L50 33'); pesponto('M49.2 -5.5 L49.2 32.4 M50.8 -5.5 L50.8 32.4');
+    }
   }
-  // punhos e cós nas mangas compridas
-  if (tpl !== 'tshirt' && tpl !== 'polo') {
-    x.beginPath(); x.moveTo(22, 103); x.lineTo(78, 103); x.moveTo(2.6, 94); x.lineTo(13.5, 96); x.moveTo(97.4, 94); x.lineTo(86.5, 96); x.stroke();
-  } else { x.beginPath(); x.moveTo(4.5, 37); x.lineTo(15.5, 45); x.moveTo(95.5, 37); x.lineTo(84.5, 45); x.stroke(); }
+  if (casaco) {
+    if (!C) {
+      x.fillStyle = tom(0.45); x.fill(new Path2D('M37 7.5 Q50 10 63 7.5 L62.5 3 Q50 1.5 37.5 3 Z'));                  // forro do colarinho
+      var col = new Path2D('M36 8 L35 0.5 Q50 -1.5 65 0.5 L64 8 Q57 9.5 50.6 9.6 L50.6 1 L49.4 1 L49.4 9.6 Q43 9.5 36 8 Z');
+      x.fillStyle = cor; x.fill(col); x.fillStyle = luz(0.07); x.fill(col); x.strokeStyle = cont; x.lineWidth = 0.45; x.stroke(col); pesponto('M35.8 1.6 Q50 -0.3 64.2 1.6');
+      costura('M27.5 13 Q24 50 26.5 107.5 M72.5 13 Q76 50 73.5 107.5'); pesponto('M28.3 13.4 Q24.8 50 27.3 107.2 M71.7 13.4 Q75.2 50 72.7 107.2');
+      x.strokeStyle = 'rgba(0,0,0,.55)'; x.lineWidth = 1.1; x.beginPath(); x.moveTo(50, 0); x.lineTo(50, 108.6); x.stroke();      // fecho
+      x.save(); x.setLineDash([0.35, 0.35]); x.strokeStyle = claro ? 'rgba(90,100,120,.7)' : 'rgba(255,255,255,.35)'; x.lineWidth = 0.6; x.beginPath(); x.moveTo(50, 1); x.lineTo(50, 108); x.stroke(); x.restore();
+      x.fillStyle = '#3a3f48'; x.fillRect(49.1, 1.2, 1.8, 2.6); x.fillStyle = '#6b7280'; x.fillRect(49.45, 3.6, 1.1, 4.2);
+      x.strokeStyle = 'rgba(0,0,0,.55)'; x.lineWidth = 0.7; x.beginPath(); x.moveTo(33, 19); x.lineTo(33, 34); x.moveTo(26.5, 64); x.lineTo(31, 82); x.moveTo(73.5, 64); x.lineTo(69, 82); x.stroke();   // bolsos com fecho
+      x.fillStyle = '#4b5160'; x.fillRect(32.5, 18.6, 1, 2.6); x.fillRect(26.1, 63.6, 1, 2.4); x.fillRect(72.9, 63.6, 1, 2.4);
+      pesponto('M32.2 18.6 L32.2 34.4 L33.8 34.4 L33.8 18.6 Z');
+    } else {
+      var colC = new Path2D('M36 7.4 L35 0.5 Q50 -1.5 65 0.5 L64 7.4 Q50 9.2 36 7.4 Z'); x.fillStyle = cor; x.fill(colC); x.fillStyle = tom(0.06); x.fill(colC); x.strokeStyle = cont; x.lineWidth = 0.45; x.stroke(colC); pesponto('M35.8 1.6 Q50 -0.3 64.2 1.6');
+      costura('M27.5 13 Q24 50 26.5 107.5 M72.5 13 Q76 50 73.5 107.5'); pesponto('M28.3 13.4 Q24.8 50 27.3 107.2 M71.7 13.4 Q75.2 50 72.7 107.2');
+    }
+  }
   x.restore();
 }
 // Área de uma vista: devolve {ox, oy, w, ppc (px por cm), zona: [x0, y0, ww, hh]} para converter posições 0–1
@@ -1642,7 +1717,9 @@ function mqDesenhar(exportar) {
 }
 // desenha a maquete num contexto qualquer (ecrã ou imagem em alta resolução para a proposta)
 function mqDesenharEm(x, W, H, exportar, semFundo) {
-  if (semFundo) x.clearRect(0, 0, W, H); else { x.fillStyle = '#fff'; x.fillRect(0, 0, W, H); }
+  if (semFundo) x.clearRect(0, 0, W, H);
+  else if (MQ.modo !== 'foto' || (MQ.fv === 'C' && !MQ.pecaC)) { var gb = x.createLinearGradient(0, 0, 0, H); gb.addColorStop(0, '#f7f8fb'); gb.addColorStop(1, '#e4e8ef'); x.fillStyle = gb; x.fillRect(0, 0, W, H); }
+  else { x.fillStyle = '#fff'; x.fillRect(0, 0, W, H); }
   MQ._areas = {};
   if (MQ.modo === 'foto') {
     var fv = MQ.fv || 'F';
@@ -1662,7 +1739,8 @@ function mqDesenharEm(x, W, H, exportar, semFundo) {
       var a = areaVista(W, H, i, vs.length); MQ._areas[l] = a;
       desenharModelo(x, a.ox, a.oy, a.w, MQ.tpl, MQ.cor, l);
       desenharLado(x, MQ.L[l], a);
-      if (vs.length > 1 || exportar) { x.fillStyle = '#6b7385'; x.font = '12px sans-serif'; x.textAlign = 'center'; x.fillText(l === 'F' ? 'FRENTE' : 'COSTAS', a.ox + a.w / 2, a.oy + a.w * 1.1 + 14); }
+      if (vs.length > 1 || exportar) { var et = l === 'F' ? 'FRENTE' : 'COSTAS'; x.font = '700 11px Inter, Arial, sans-serif'; esp(x, '2px'); var ew = x.measureText(et).width + 22, ex = a.ox + a.w / 2 - ew / 2, ey = a.oy + a.w * 1.1 + 6;
+        x.fillStyle = l === 'F' ? '#1f3864' : '#9b1c72'; rr(x, ex, ey, ew, 20, 10); x.fill(); x.fillStyle = '#fff'; x.textAlign = 'center'; x.fillText(et, a.ox + a.w / 2 + 1, ey + 14); esp(x, '0px'); x.textAlign = 'left'; }
     });
   }
   if (exportar) {
@@ -1805,6 +1883,9 @@ function dtfDaLinha(i) {
   if (l.ref !== MQ.ref || (l.cor || '') !== (MQ.corOrc || '')) { MQ.ref = l.ref; MQ.lab = l.produto; MQ.peca = null; MQ.pecaOrig = null; }
   MQ.corOrc = l.cor || '';
   DTF.qtd = Number(l.qtd) || 1;
+  var lp = { pers: [l.pers1, l.pers2].filter(opTemPers).join(' + ') };   // esboço da peça certa, na cor do orçamento; frente + costas já postas
+  MQ.pecaC = null; MQ.fv = 'F'; mqParaModelo(lp);
+  if (mqTemCostas(lp)) { var Lf = MQ.L.F; if (!Lf.des) { Lf.x = MQ.tpl === 'casaco' ? 0.68 : 0.64; Lf.y = 0.30; Lf.wcm = 9; } mqCostasPara(lp, null); }
   irMaquete();
 }
 function dtfUsar(pv) {
