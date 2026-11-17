@@ -1381,6 +1381,12 @@ function recolorir(im, hex) {
     else while (pilha.length) { var h2 = pilha.pop(), h2x = h2 % W, h2y = (h2 - h2x) / W;   // marca o resto como visto
       [h2x > 0 ? h2 - 1 : -1, h2x < W - 1 ? h2 + 1 : -1, h2y > 0 ? h2 - W : -1, h2y < H - 1 ? h2 + W : -1].forEach(function (w4) { if (w4 >= 0 && !pc[w4] && !bg[w4] && !vis[w4]) { vis[w4] = 1; pilha.push(w4); } }); }
   }
+  // orla: píxeis da borda com a cor da peça já misturada com o fundo também entram (2 voltas, tolerância maior)
+  for (var volta = 0; volta < (neutro ? 0 : 2); volta++) {
+    var add = [];
+    for (i = W + 1; i < N - W - 1; i++) if (!pc[i] && (pc[i - 1] || pc[i + 1] || pc[i - W] || pc[i + W]) && !pele(i) && longe(i) < 150) add.push(i);
+    add.forEach(function (q) { pc[q] = 1; });
+  }
   // 4) luz de referência da peça e bordas suaves
   var ls = []; for (i = 0; i < N; i += 3) if (pc[i]) ls.push(lum[i]);
   if (ls.length < 50) return im;
