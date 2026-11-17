@@ -2348,18 +2348,22 @@ function desenharEnc() {
   var n = EN.linhas.length, h = '<div class="card"><div class="g2"><div><label>Fornecedor</label><select onchange="EN.forn=this.value;desenharEnc()">' + opts(fornecedores().map(function (f) { return f.nome; }), EN.forn) + '</select></div>' +
     '<div><label>Estado</label><div style="padding:9px 0">' + esc(EN.estado || 'Nova') + (EN.envio ? ' · enviada ' + dt(EN.envio) : '') + '</div></div></div>' +
     '<label>Obs. (vai no email e no PDF)</label><input value="' + esc(EN.obs) + '" onchange="EN.obs=this.value" placeholder="ex.: Urgente / para o cliente X"></div>';
-  h += '<h2>Artigos (' + n + ')</h2>' + (n ? EN.linhas.map(function (l, i) {
-    var cores = coresDe(l.ref), tams = tamanhosDe(l.ref);
+  var G = encGrupos(), pecas = EN.linhas.reduce(function (a, l) { return a + (Number(l.qtd) || 0); }, 0);
+  h += '<h2>Artigos (' + G.length + (pecas ? ' · ' + pecas + ' peças' : '') + ')</h2>' + (G.length ? G.map(function (g, gi) {
+    var l = EN.linhas[g.idx[0]], cores = coresDe(l.ref), tams = encTamsGrupo(g);
     if (l.cor && !cores.some(function (o) { return o[0] === l.cor; })) cores.unshift([l.cor, l.cor]);
-    var outro = fornDe(l.produto) !== EN.forn;
-    return '<div class="card"><div class="row">' + foto(l.ref) + '<button class="prod-btn sp" onclick="encProduto(' + i + ')">' + esc(l.produto) + '</button><button class="x" onclick="EN.linhas.splice(' + i + ',1);desenharEnc()">✕</button></div>' +
+    var outro = fornDe(l.produto) !== EN.forn, q = {}, tot = 0, val = 0, preco = 0;
+    g.idx.forEach(function (k) { var x = EN.linhas[k]; if (x.tam) q[x.tam] = (q[x.tam] || 0) + (Number(x.qtd) || 0); tot += Number(x.qtd) || 0; if (x.preco) preco = x.preco; val += Number(x.total) || 0; });
+    return '<div class="card"><div class="row">' + foto(l.ref) + '<button class="prod-btn sp" onclick="encGrProduto(' + gi + ')">' + esc(l.produto) + '</button><button class="x" onclick="encGrTirar(' + gi + ')">✕</button></div>' +
       (outro ? '<div class="alerta">Este artigo parece ser de outro fornecedor.</div>' : '') +
-      '<div class="g3"><div><label>Cor</label>' + (cores.length ? '<select onchange="EN.linhas[' + i + '].cor=this.value">' + opts(cores, l.cor, '—') + '</select>' : '<input value="' + esc(l.cor) + '" onchange="EN.linhas[' + i + '].cor=this.value">') + '</div>' +
-      '<div><label>Tamanho</label>' + (tams.length ? '<select onchange="EN.linhas[' + i + '].tam=this.value">' + opts(tams, l.tam, '—') + '</select>' : '<input value="' + esc(l.tam) + '" onchange="EN.linhas[' + i + '].tam=this.value">') + '</div>' +
-      '<div><label>Qtd</label><input type="number" inputmode="numeric" min="1" value="' + esc(l.qtd) + '" onchange="EN.linhas[' + i + '].qtd=Number(this.value)||\'\'"></div></div>' +
-      '<label>Nota (cliente / amostra)</label><input value="' + esc(l.nota || '') + '" onchange="EN.linhas[' + i + '].nota=this.value">' +
-      (l.preco ? '<div class="mut num" style="margin-top:6px">' + eur(l.preco) + ' s/IVA × ' + l.qtd + ' = ' + eur(l.total) + '</div>' : '') +
-      '<div class="acts"><button class="btn lite" onclick="encOutroTam(' + i + ')">＋ Outro tamanho / cor deste artigo</button></div></div>';
+      '<label>Cor</label>' + (cores.length ? '<select onchange="encGrCor(' + gi + ',this.value)">' + opts(cores, l.cor, '—') + '</select>' : '<input value="' + esc(l.cor) + '" onchange="encGrCor(' + gi + ',this.value)">') +
+      '<label>Quantidades por tamanho</label><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">' + tams.map(function (t) {
+        return '<div style="width:58px;text-align:center"><div style="font-size:11px;font-weight:700;color:#56607a">' + esc(t) + '</div>' +
+          '<input type="number" inputmode="numeric" min="0" style="text-align:center;padding:8px 4px' + (q[t] ? ';background:#fff7d6;font-weight:700' : '') + '" value="' + (q[t] || '') + '" onchange="encGrTam(' + gi + ',' + js(t) + ',this.value)"></div>';
+      }).join('') + '<div style="width:58px;text-align:center"><div style="font-size:11px;font-weight:700;color:#56607a">TOTAL</div><div style="padding:9px 0;font-weight:800">' + (tot || '—') + '</div></div></div>' +
+      '<label>Nota (cliente / amostra)</label><input value="' + esc(l.nota || '') + '" onchange="encGrNota(' + gi + ',this.value)">' +
+      (preco ? '<div class="mut num" style="margin-top:6px">' + eur(preco) + ' s/IVA × ' + tot + ' = ' + eur(Math.round(preco * tot * 100) / 100) + '</div>' : '') +
+      '<div class="acts"><button class="btn lite" onclick="encOutraCor(' + gi + ')">＋ Outra cor deste artigo</button></div></div>';
   }).join('') : '<div class="vazio">Ainda sem artigos.</div>');
   h += '<button class="btn sec" style="width:100%" onclick="encAdicionar()">＋ Adicionar artigo</button>';
   if (EN.total) h += '<div class="card" style="margin-top:10px"><div class="tot big"><span>Total s/ IVA (última gravação)</span><span class="num">' + eur(EN.total) + '</span></div></div>';
@@ -2376,9 +2380,53 @@ function desenharEnc() {
 }
 function encAdicionar() { PICK = { i: null, cb: function (lab, ref) { EN.linhas.push({ produto: lab, ref: ref, cor: '', tam: '', qtd: '', nota: '' }); desenharEnc(); } }; abrirModal(); }
 function encProduto(i) { PICK = { i: null, cb: function (lab, ref) { var l = EN.linhas[i]; l.produto = lab; l.ref = ref; l.cor = ''; l.tam = ''; desenharEnc(); } }; abrirModal(); }
+// encomenda: um cartão por artigo + cor, com a grelha de tamanhos (por baixo continua a ser uma linha por tamanho)
+function encGrupos() {
+  var G = [], m = {};
+  EN.linhas.forEach(function (l, k) { var c = (l.ref || l.produto) + '|' + (l.cor || ''); if (!(c in m)) { m[c] = G.length; G.push({ chave: c, idx: [] }); } G[m[c]].idx.push(k); });
+  return G;
+}
+function encTamsGrupo(g) {
+  var l = EN.linhas[g.idx[0]], ts = tamanhosDe(l.ref).slice();
+  g.idx.forEach(function (k) { var t = EN.linhas[k].tam; if (t && ts.indexOf(t) < 0) ts.push(t); });
+  return ts.length ? ts : ['Único'];
+}
+function encGrTam(gi, t, v) {
+  var g = encGrupos()[gi]; if (!g) return; var n = Math.max(0, Math.round(Number(v) || 0)), l0 = EN.linhas[g.idx[0]];
+  var com = g.idx.filter(function (k) { return EN.linhas[k].tam === t; });
+  if (com.length) { EN.linhas[com[0]].qtd = n || ''; com.slice(1).reverse().forEach(function (k) { EN.linhas.splice(k, 1); }); }
+  else if (n) {
+    var vazia = g.idx.filter(function (k) { return !EN.linhas[k].tam; })[0];
+    if (vazia !== undefined) { EN.linhas[vazia].tam = t; EN.linhas[vazia].qtd = n; }
+    else EN.linhas.splice(g.idx[g.idx.length - 1] + 1, 0, { produto: l0.produto, ref: l0.ref, cor: l0.cor, tam: t, qtd: n, nota: l0.nota || '' });
+  }
+  // tira as linhas a zero, mas deixa sempre uma (sem tamanho) para o cartão não desaparecer
+  g = encGrupos().filter(function (x) { return x.chave === g.chave; })[0];
+  if (g) { var zero = g.idx.filter(function (k) { return !(Number(EN.linhas[k].qtd) > 0); }), fica = zero.length === g.idx.length ? zero.shift() : undefined;
+    zero.reverse().forEach(function (k) { EN.linhas.splice(k, 1); }); if (fica !== undefined) EN.linhas[fica].tam = ''; }
+  var sy = window.scrollY; desenharEnc(); window.scrollTo(0, sy);
+}
+function encGrCor(gi, cor) {
+  var g = encGrupos()[gi]; if (!g) return; var l0 = EN.linhas[g.idx[0]], destino = (l0.ref || l0.produto) + '|' + (cor || '');
+  var alvo = encGrupos().filter(function (x) { return x.chave === destino; })[0];
+  g.idx.slice().reverse().forEach(function (k) {
+    var l = EN.linhas[k], ja = alvo ? alvo.idx.filter(function (a) { return EN.linhas[a].tam && EN.linhas[a].tam === l.tam; })[0] : undefined;
+    if (ja !== undefined && l.tam) { EN.linhas[ja].qtd = (Number(EN.linhas[ja].qtd) || 0) + (Number(l.qtd) || 0); EN.linhas.splice(k, 1); }
+    else if (alvo && !l.tam && !(Number(l.qtd) > 0)) EN.linhas.splice(k, 1);
+    else l.cor = cor;
+  });
+  var sy = window.scrollY; desenharEnc(); window.scrollTo(0, sy);
+}
+function encGrNota(gi, v) { var g = encGrupos()[gi]; if (g) g.idx.forEach(function (k) { EN.linhas[k].nota = v; }); }
+function encGrTirar(gi) { var g = encGrupos()[gi]; if (!g) return; g.idx.slice().reverse().forEach(function (k) { EN.linhas.splice(k, 1); }); desenharEnc(); }
+function encGrProduto(gi) { var g = encGrupos()[gi]; if (!g) return; PICK = { i: null, cb: function (lab, ref) { g.idx.forEach(function (k) { var l = EN.linhas[k]; l.produto = lab; l.ref = ref; l.cor = ''; l.preco = 0; }); desenharEnc(); } }; abrirModal(); }
+function encOutraCor(gi) { var g = encGrupos()[gi]; if (!g) return; var l = EN.linhas[g.idx[0]]; EN.linhas.push({ produto: l.produto, ref: l.ref, cor: '', tam: '', qtd: '', nota: l.nota || '' }); desenharEnc(); }
 function encOutroTam(i) { var l = EN.linhas[i]; EN.linhas.splice(i + 1, 0, { produto: l.produto, ref: l.ref, cor: l.cor, tam: '', qtd: '', nota: l.nota }); desenharEnc(); }
 function encGuardar(enviar) {
-  var ls = EN.linhas.filter(function (l) { return l.produto && Number(l.qtd) > 0; });
+  var ordG = {}; encGrupos().forEach(function (g, gi) { ordG[g.chave] = gi; });
+  var ls = EN.linhas.filter(function (l) { return l.produto && Number(l.qtd) > 0; }).map(function (l, k) { return { l: l, k: k }; }).sort(function (a, b) {
+    var ga = ordG[(a.l.ref || a.l.produto) + '|' + (a.l.cor || '')], gb = ordG[(b.l.ref || b.l.produto) + '|' + (b.l.cor || '')]; if (ga !== gb) return ga - gb;
+    var ts = tamanhosDe(a.l.ref), ta = ts.indexOf(a.l.tam), tb = ts.indexOf(b.l.tam); if (ta !== tb) return (ta < 0 ? 99 : ta) - (tb < 0 ? 99 : tb); return a.k - b.k; }).map(function (x) { return x.l; });
   if (!ls.length) { msg('Falta pelo menos um artigo com quantidade.', true); return; }
   var semTam = ls.filter(function (l) { return !l.cor || !l.tam; }).length;
   if (semTam && !confirm(semTam + ' linha(s) sem cor ou sem tamanho. Continuar?')) return;
