@@ -1409,7 +1409,7 @@ function pintarPeca(im, ref, corTxt) { var h = corAlvoPeca(ref, corTxt); try { r
 function mqCorPeca(hex) {
   MQ.corMan = MQ.corMan || {}; MQ.corMan[MQ.ref || '_'] = hex;
   if (MQ.pecaOrig) MQ.peca = pintarPeca(MQ.pecaOrig, MQ.ref || '_', MQ.corOrc);
-  irMaquete();
+  var sy = window.scrollY; irMaquete(); window.scrollTo(0, sy);
 }
 function mqCorCartao() {
   var atual = corAlvoPeca(MQ.ref || '_', MQ.corOrc), vistos = {}, cs = [];
@@ -1421,7 +1421,7 @@ function mqCorCartao() {
     '<div class="mut">A foto do catálogo é pintada na cor escolhida (sombras e dobras mantêm-se). ' + (MQ.corOrc ? 'Cor do orçamento: ' + esc(MQ.corOrc) + '.' : '') + '</div>';
 }
 function mqCarregarFoto() {   // primeiro a foto grande da proposta (pasta "INOVASTAMP - Fotos Proposta"); se não houver, a miniatura do catálogo
-  var usa = function (r) { var im = new Image(); im.onload = function () { MQ.pecaOrig = im; MQ.peca = pintarPeca(im, MQ.ref, MQ.corOrc); mqDesenhar(); }; im.src = 'data:' + r.tipo + ';base64,' + r.b64; };
+  var usa = function (r) { var im = new Image(); im.onload = function () { MQ.pecaOrig = im; MQ.peca = pintarPeca(im, MQ.ref, MQ.corOrc); if ($('mqCv') && MQ.modo === 'foto') { var sy = window.scrollY; irMaquete(); window.scrollTo(0, sy); } else mqDesenhar(); }; im.src = 'data:' + r.tipo + ';base64,' + r.b64; };
   var ref = MQ.ref; fotoHD(ref).then(function (r) { if (MQ.ref !== ref) return; if (r && r.b64) usa(r); else call('apiFoto', ref).then(usa); });
 }
 function mqLerImagem(input, cb) {
