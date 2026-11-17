@@ -265,7 +265,8 @@ function desenharDetalhe(o) {
     (o.pdf ? '<div class="acts"><button class="btn wa" onclick="whatsapp(' + n + ')">WhatsApp</button></div><div id="waZona"></div>' : '') +
     '<div class="acts"><button class="btn sec" onclick="editar(' + n + ')">Editar</button><button class="btn sec" onclick="duplicar()">Duplicar</button>' +
     '<button class="btn sec" onclick="fichaCliente(ATUAL.cliente, ATUAL.nif)">Ficha do cliente</button></div>' +
-    '<div class="acts"><button class="btn sec" onclick="maqueteDoOrc()">✎ Maquete deste orçamento</button></div>';
+    '<div class="acts"><button class="btn sec" onclick="maqueteDoOrc()">✎ Maquete deste orçamento</button></div>' +
+    (['Em produção', 'Faturado'].indexOf(o.estado) < 0 && !o.fatura ? '<div class="acts"><button class="btn sec" style="color:#b3261e;border-color:#f1c7c3" onclick="eliminarOrc(' + n + ')">Eliminar orçamento</button></div>' : '');
   if (['Aceite', 'Em produção', 'Faturado'].indexOf(o.estado) >= 0) h += '<div id="prodZona"><div class="mut" style="margin:10px 2px">A carregar produção e pagamentos…</div></div>';
   if (['Aceite', 'Em produção'].indexOf(o.estado) >= 0) h += '<h2>O cliente mudou de ideias?</h2><div class="card"><div class="mut">' +
     'Para alterar artigos: <b>Editar</b>, muda o que for preciso e guarda — o orçamento volta a "Enviado" e reenvias (o link de aceitação continua o mesmo). ' +
@@ -645,6 +646,13 @@ function duplicar() {
   (o.opcoes || []).forEach(function (k) { if (ED.linhas[k]) ED.linhas[k].opc = true; });
   CALC = null; desenharEditor();
   msg('Cópia de ' + o.num + '. Muda o cliente ou os artigos e carrega em Guardar — fica com um número novo.');
+}
+function eliminarOrc(num) {
+  var o = ATUAL && ATUAL.num === num ? ATUAL : null;
+  if (!confirm('Eliminar o orçamento ' + num + (o ? ' (' + o.cliente + ', ' + eur(o.tC) + ')' : '') + '?\n\nSai da app e da folha. Fica uma cópia na aba "Orçamentos eliminados" e o PDF vai para o lixo do Drive.')) return;
+  call('apiOrcEliminar', num).then(function (r) {
+    LISTA = []; ATUAL = null; msg('Orçamento ' + r.num + ' eliminado.'); irLista(true);
+  });
 }
 function aplicarEscolha(num) {
   var e = ATUAL && ATUAL.escolha; if (!e) return;
