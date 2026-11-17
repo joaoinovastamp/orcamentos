@@ -2541,8 +2541,9 @@ function propGerar(cb) {
     // cores e tamanhos
     var colW = cw / 2;
     x.fillStyle = '#aab6d3'; x.font = '500 14px ' + F; esp(x, '3px'); if (d.cores.length) x.fillText('CORES DISPONÍVEIS', X, y); var tams = String(d.tams || '').split(/[\s,]+/).filter(String); if (tams.length) x.fillText('TAMANHOS', X + colW, y); esp(x, '0px');
-    var sx = X, sy = y + 22, sw = 96;
-    d.cores.slice(0, 10).forEach(function (cn, i) { var cx2 = X + (i % 5) * sw + 26, cy2 = sy + Math.floor(i / 5) * 104 + 26;
+    var sx = X, sy = y + 22, sw = 96, nl = Math.max(1, Math.floor((colW - 8) / sw)), vc = {};
+    var coresP = d.cores.map(function (cn) { return String(cn).replace(/\s*[—–-]\s*\d+\s*em stock.*$/i, '').trim(); }).filter(function (cn) { var kk = norm(cn); if (vc[kk]) return false; vc[kk] = 1; return true; });
+    coresP.slice(0, nl * 2).forEach(function (cn, i) { var cx2 = X + (i % nl) * sw + 26, cy2 = sy + Math.floor(i / nl) * 104 + 26;
       x.save(); x.shadowColor = 'rgba(0,0,0,.35)'; x.shadowBlur = 8; x.shadowOffsetY = 3; x.beginPath(); x.arc(cx2, cy2, 24, 0, 7); x.fillStyle = corHex(cn); x.fill(); x.restore();
       x.strokeStyle = 'rgba(255,255,255,.8)'; x.lineWidth = 3; x.beginPath(); x.arc(cx2, cy2, 24, 0, 7); x.stroke();
       x.fillStyle = '#dfe5f2'; x.font = '400 14px ' + F; x.textAlign = 'center'; var m = String(cn).match(/^(\d+)\s+(.*)$/), nomeC = m ? m[2] : cn;
