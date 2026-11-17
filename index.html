@@ -92,6 +92,7 @@
 <main id="main"></main>
 <nav>
   <button id="n-lista" onclick="irLista()"><b>☰</b>Orçamentos</button>
+  <button id="n-prod" onclick="irProducao()"><b>⚙</b>Produção</button>
   <button id="n-novo" onclick="novo()"><b>＋</b>Novo</button>
   <button id="n-cons" onclick="irConsulta()"><b>€</b>Consulta</button>
   <button id="n-enc" onclick="irEncomendas()"><b>⇪</b>Encomendas</button>
@@ -156,10 +157,11 @@ function abrirPdf2(num) {
     setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
   });
 }
-function navOn(id) { ['n-lista','n-novo','n-cons','n-enc','n-res','n-maq'].forEach(function (n) { $(n).className = n === id ? 'on' : ''; }); window.scrollTo(0, 0); }
+function navOn(id) { ['n-lista','n-prod','n-novo','n-cons','n-enc','n-res','n-maq'].forEach(function (n) { $(n).className = n === id ? 'on' : ''; }); window.scrollTo(0, 0); }
 
 // ---------------- arranque ----------------
-var ABRIR_OP = (function () { try { return new URLSearchParams(location.search).get('op') || ''; } catch (e) { return ''; } })(), OP_FOCO = false;
+var ABRIR_OP = (function () { try { return new URLSearchParams(location.search).get('op') || ''; } catch (e) { return ''; } })(), OP_FOCO = false, PRONTO_MSG = false;
+var FIM_OP = (function () { try { return new URLSearchParams(location.search).get('fim') === '1'; } catch (e) { return false; } })();
 function iniciar() {
   if (!PIN) { entrar(); return; }
   call('apiInit').then(function (d) {
@@ -1907,8 +1909,8 @@ function separadores(atual) {
   }).join('') + '</div>';
 }
 function carregarProducao(cb) { call('apiProducao').then(function (r) { PROD = r; cb(); }); }
-function irProducao() { navOn('n-lista'); $('titulo').textContent = 'Produção'; carregarProducao(desenharProducao); }
-function irCobrar() { navOn('n-lista'); $('titulo').textContent = 'Por cobrar'; carregarProducao(desenharCobrar); }
+function irProducao() { navOn('n-prod'); $('titulo').textContent = 'Produção'; carregarProducao(desenharProducao); }
+function irCobrar() { navOn('n-prod'); $('titulo').textContent = 'Por cobrar'; carregarProducao(desenharCobrar); }
 function diasPara(iso) { if (!iso) return null; return Math.round((new Date(iso + 'T00:00:00') - new Date(PROD.hoje + 'T00:00:00')) / 86400000); }
 function infoEntrega(o) {
   var d = diasPara(o.entrega); if (d === null) return '<span class="mut">sem data de entrega</span>';
@@ -1928,7 +1930,9 @@ function desenharProducao() {
         '</div></div><div style="text-align:right"><div class="b num">' + eur(o.tC) + '</div>' +
         (falta > 0.005 ? '<div class="mut num">falta ' + eur(falta) + '</div>' : '<div class="ok-t">pago</div>') + '</div></div>' +
         (f !== 'Entregue' ? '<div class="acts" style="margin-top:4px">' + PROD.fases.filter(function (x) { return PROD.fases.indexOf(x) === PROD.fases.indexOf(f) + 1; }).map(function (x) {
-          return '<button class="btn lite" onclick="event.stopPropagation();mudarFase(\'' + esc(o.num) + '\',\'' + esc(x) + '\')">→ ' + esc(x) + '</button>';
+          return x === 'Pronto' ? '<button class="btn ok" onclick="event.stopPropagation();concluirProd(\'' + esc(o.num) + '\')">✓ Produção concluída</button>'
+            : x === 'Entregue' ? '<button class="btn sec" onclick="event.stopPropagation();entregarProd(\'' + esc(o.num) + '\')">Entregue ao cliente</button>'
+            : '<button class="btn lite" onclick="event.stopPropagation();mudarFase(\'' + esc(o.num) + '\',\'' + esc(x) + '\')">→ ' + esc(x) + '</button>';
         }).join('') + '</div>' : '') + '</div>';
     }).join('') + (f === 'Entregue' && (g[f] || []).length > 10 ? '<div class="mut">(últimos 10)</div>' : '') + '</div>' : '<div class="mut" style="margin:0 2px 8px">—</div>';
   });
@@ -1939,8 +1943,22 @@ function mudarFase(num, fase) {
   if (PROD.fases.indexOf(fase) >= 2 && o.maq && o.maq !== 'Aprovada' && !confirm('A maquete de ' + num + ' ainda não foi aprovada pelo cliente. Avançar na mesma?')) return;
   call('apiProdGuardar', num, { fase: fase, entrega: o.entrega, notas: o.notas }).then(function (r) {
     msg(num + ': ' + fase + (r.estado === 'Em produção' && o.estado === 'Aceite' ? ' (estado: Em produção)' : '')); LISTA = [];
-    if (fase === 'Pronto') { abrir(num); setTimeout(function () { if ($('msgZona')) mensagem('pronto'); }, 1500); } else irProducao();
+    if (fase === 'Pronto') { PRONTO_MSG = true; OP_FOCO = true; abrir(num); } else irProducao();
   });
+}
+function prodDe(num) { if (PR && PR.num === num) return PR; return (PROD && PROD.lista || []).filter(function (x) { return x.num === num; })[0] || {}; }
+function concluirProd(num) {
+  var p = prodDe(num);
+  if (!confirm('Dar a produção de ' + num + (p.cliente ? ' (' + p.cliente + ')' : '') + ' como CONCLUÍDA?\nPassa para "Pronto" e preparo a mensagem ao cliente.')) return;
+  call('apiProdGuardar', num, { fase: 'Pronto', entrega: p.entrega || '', notas: p.notas || '' }).then(function () {
+    msg(num + ': produção concluída ✓'); LISTA = []; PRONTO_MSG = true; OP_FOCO = true; abrir(num);
+  });
+}
+function entregarProd(num) {
+  var p = prodDe(num), falta = Math.round(((p.tC || 0) - (p.pago || 0)) * 100) / 100;
+  if (falta > 0.005 && !confirm('Ainda falta pagar ' + eur(falta) + '. Marcar ' + num + ' como entregue na mesma?')) return;
+  if (falta <= 0.005 && !confirm('Marcar ' + num + ' como entregue ao cliente?')) return;
+  call('apiProdGuardar', num, { fase: 'Entregue', entrega: p.entrega || '', notas: p.notas || '' }).then(function () { msg(num + ': entregue ✓'); LISTA = []; if (ATUAL && ATUAL.num === num) carregarProd(num); else irProducao(); });
 }
 function desenharCobrar() {
   var l = PROD.lista.filter(function (o) { return o.tC - o.pago > 0.005; }), tot = l.reduce(function (a, o) { return a + o.tC - o.pago; }, 0);
@@ -1962,7 +1980,10 @@ function desenharProd() {
     '<div class="g2"><div><label>Fase</label><select id="pFase">' + opts(p.fases, p.fase) + '</select></div>' +
     '<div><label>Data de entrega</label><input id="pEnt" type="date" value="' + esc(p.entrega) + '"></div></div>' +
     '<label>Notas de produção (oficina)</label><textarea id="pNotas" rows="2" placeholder="ex.: logótipo frente 25 cm, costas nome + nº">' + esc(p.notas) + '</textarea>' +
-    '<div class="acts"><button class="btn ok" onclick="guardarProd()">Guardar produção</button><button class="btn sec" onclick="fichaProducao()">Ordem de produção (PDF)</button></div>' +
+    (p.fase === 'Pronto' ? '<div class="ok-t" style="margin-top:8px">✓ Produção concluída — pronto a levantar' + (falta > 0.005 ? ' · falta pagar ' + eur(falta) : ' · pago') + '</div><div class="acts"><button class="btn wa" onclick="mensagem(\'pronto\',\'\',\'prontoMsg\')">Avisar o cliente</button><button class="btn sec" onclick="entregarProd(ATUAL.num)">Entregue ao cliente</button></div>'
+      : p.fase === 'Entregue' ? '<div class="ok-t" style="margin-top:8px">✓ Entregue ao cliente</div>'
+      : '<div class="acts"><button class="btn ok" style="font-size:17px;padding:14px" onclick="concluirProd(ATUAL.num)">✓ Produção concluída</button></div>') + '<div id="prontoMsg"></div>' +
+    '<div class="acts"><button class="btn sec" onclick="guardarProd()">Guardar produção</button><button class="btn sec" onclick="fichaProducao()">Ordem de produção (PDF)</button></div>' +
     infoMaqProd(p) + '<div id="opZona"></div></div>';
   h += '<h2>Pagamentos</h2><div class="card"><div class="tot"><span>Total c/ IVA</span><span class="num">' + eur(p.tC) + '</span></div>' +
     '<div class="tot"><span>Pago</span><span class="num">' + eur(p.pago) + '</span></div>' +
@@ -1977,6 +1998,8 @@ function desenharProd() {
     '<div class="acts"><button class="btn sec" onclick="registarPag()">Registar pagamento</button></div><div class="mut">Valor vazio = ' + (p.pago ? 'o que falta' : 'sinal de 50%') + '.</div></div>';
   $('prodZona').innerHTML = h;
   if (OP_FOCO) { OP_FOCO = false; setTimeout(function () { var z = $('prodZona'); if (z) z.scrollIntoView({ behavior: 'smooth' }); }, 150); }
+  if (PRONTO_MSG && p.fase === 'Pronto') { PRONTO_MSG = false; mensagem('pronto', '', 'prontoMsg'); }
+  if (FIM_OP) { FIM_OP = false; if (p.fase !== 'Pronto' && p.fase !== 'Entregue') setTimeout(function () { concluirProd(p.num); }, 400); else msg(p.num + ': já está ' + p.fase + '.'); }
 }
 function guardarProd() {
   call('apiProdGuardar', ATUAL.num, { fase: $('pFase').value, entrega: $('pEnt').value, notas: $('pNotas').value }).then(function (r) {
@@ -2083,7 +2106,7 @@ function opGerar() {
   if (!sel.length) { msg('Escolhe pelo menos um artigo com personalização.', true); return; }
   $('opRes').innerHTML = '<div class="mut" style="text-align:center;margin-top:8px">A desenhar a ordem de produção…</div>';
   var info;
-  Promise.all([call('apiOPNumero', OP.num), semFalha(call('apiProdAbrir', OP.num))]).then(function (r) { info = r[0]; info.maqAp = r[1] && r[1].maqAp || null; return opPaginas(info); }).then(function (pags) { return Promise.all(pags.map(canvasJpeg)); }).then(function (pgs) {
+  Promise.all([call('apiOPNumero', OP.num), semFalha(call('apiProdAbrir', OP.num)), semFalha(call('apiQrOP', OP.num))]).then(function (r) { info = r[0]; info.maqAp = r[1] && r[1].maqAp || null; return (r[2] && r[2].src ? opImg(r[2].src) : Promise.resolve(null)).then(function (q) { info.qr = q; return opPaginas(info); }); }).then(function (pags) { return Promise.all(pags.map(canvasJpeg)); }).then(function (pgs) {
     var bytes = pdfDeJpegs(pgs), nome = 'OP ' + info.op + ' ' + String(OP.o.cliente || '').replace(/[\\\/:*?"<>|]/g, '') + '.pdf';
     OPPDF = { nome: nome, a: bytes }; if (typeof PR !== 'undefined' && PR) PR.op = info.op;
     var pode = false; try { pode = navigator.canShare && navigator.canShare({ files: [new File([bytes], nome, { type: 'application/pdf' })] }); } catch (e) {}
@@ -2120,8 +2143,10 @@ function opDesenhar(o, info, metades, ino) {
     // campos a preencher
     y = 152;
     function campo(rot, X, Y, Wc) { txt(rot, X, Y + 20, '#14213D', 800, 12); var lw = larg(rot, 800, 12) + 8; caixa(X + lw, Y, Wc - lw, 30, 6, '#fff', '#8a93a8', 1.2); }
-    campo('Máquina:', XL, y, W * 0.5 - 6); campo('Data:', XL + W * 0.5 + 6, y, W * 0.5 - 6);
-    campo('Operadores:', XL, y + 38, W);
+    var Wf = info.qr ? W - 86 : W;
+    campo('Máquina:', XL, y, Wf * 0.5 - 6); campo('Data:', XL + Wf * 0.5 + 6, y, Wf * 0.5 - 6);
+    campo('Operadores:', XL, y + 38, Wf);
+    if (info.qr) { caixa(XR - 76, y - 12, 76, 72, 6, '#fff', '#c9cfdb'); x.drawImage(info.qr, XR - 70, y - 9, 64, 64); txt('CONCLUÍDO? LER QR', XR - 38, y + 68, '#1f8a4c', 800, 6.2, 'center', 0.3); }
     // desenho: posição na peça (esq.) + desenho grande (dir.)
     y = 238; txt('DESENHO A ESTAMPAR', XL, y, '#8a93a8', 700, 8, 'left', 2.2);
     var ap = info.maqAp || {}, okM = ap.estado === 'Aprovada', tA = okM ? '✓ MAQUETE APROVADA' + (ap.data ? ' · ' + String(ap.data).substring(0, 10) : '') : (ap.estado === 'Alterações pedidas' ? '✎ CLIENTE PEDIU ALTERAÇÕES' : '⚠ MAQUETE POR APROVAR'), wA = larg(tA, 800, 8.5) + 18;
@@ -2181,10 +2206,12 @@ var MORADA = 'Travessa do Parque Industrial, nº 206, 4830-835 Vilela, Póvoa de
 function mensagem(tipo, link, zona) {
   var o = ATUAL; if (!o) return;
   zona = zona || 'msgZona';
-  ['msgZona', 'maqApMsg', 'recMsg'].forEach(function (z) { if (z !== zona && $(z)) $(z).innerHTML = ''; });
+  ['msgZona', 'maqApMsg', 'recMsg', 'prontoMsg'].forEach(function (z) { if (z !== zona && $(z)) $(z).innerHTML = ''; });
   var p = PR && PR.num === o.num ? PR : { tC: o.tC, pago: 0 }, falta = Math.max(0, Math.round((p.tC - p.pago) * 100) / 100), ola = 'Bom dia' + (o.cliente ? ' ' + o.cliente : '') + ',\n\n';
   var t = tipo === 'sinal' ? ola + 'Obrigado pela adjudicação do orçamento ' + o.num + ' (' + eur(o.tC) + ' com IVA).\nPara avançarmos com a encomenda do material e a produção, agradecemos o sinal de 50% (' + eur(Math.round(o.tC / 2 * 100) / 100) + '), por MB Way ou transferência. Enviaremos a confirmação do prazo de entrega.\n\nObrigado,\nINOVASTAMP'
-    : tipo === 'pronto' ? ola + 'A sua encomenda (orçamento ' + o.num + ') está pronta para levantamento.\n' + (falta > 0.005 ? 'Valor em falta: ' + eur(falta) + '.\n' : '') + 'Morada: ' + MORADA + '.\n\nObrigado,\nINOVASTAMP'
+    : tipo === 'pronto' ? ola + 'A sua encomenda (orçamento ' + o.num + ') está concluída e pronta a levantar.\n\n' +
+      (falta > 0.005 ? 'Para a podermos entregar, falta o pagamento de ' + eur(falta) + ' (total ' + eur(p.tC) + ', já recebido ' + eur(p.pago || 0) + '). Pode pagar por MB Way ou transferência e enviar-nos o comprovativo.\n\n' : 'O pagamento está regularizado — obrigado!\n\n') +
+      'Pode levantar na nossa morada: ' + MORADA + '. Se preferir, combinamos a entrega.\n\nObrigado,\nINOVASTAMP'
     : tipo === 'maquete' ? ola + 'Segue a maquete da personalização (orçamento ' + o.num + ') para aprovação:\n' + link + '\n\nNa página pode aprovar ou pedir alterações.\n\nObrigado,\nINOVASTAMP'
     : tipo === 'tamanhos' ? ola + 'Para prepararmos a encomenda (orçamento ' + o.num + '), pedimos que cada colaborador indique o seu tamanho neste link:\n' + link + '\n\nDemora menos de um minuto e pode reencaminhar esta mensagem à equipa.\n\nObrigado,\nINOVASTAMP'
     : ola + 'Relembramos que está em falta o pagamento de ' + eur(falta) + ' referente ao orçamento ' + o.num + (o.fatura ? ' (fatura ' + o.fatura + ')' : '') + '.\nPode pagar por MB Way ou transferência. Se já efetuou o pagamento, por favor ignore esta mensagem.\n\nObrigado,\nINOVASTAMP';
