@@ -2388,7 +2388,7 @@ function propNomes(lab, ref) {   // título grande + subtítulo a partir do nome
   return { t: w.slice(-n).join(' '), s: w.slice(0, -n).join(' ') };
 }
 function propDados() {   // dados da proposta (guardados por artigo neste telemóvel)
-  var ref = MQ.modo === 'foto' ? MQ.ref : '', chave = 'inovastamp_prop_' + (base(ref) || MQ.tpl), g = {};
+  var ref = MQ.ref || '', chave = 'inovastamp_prop_' + (base(ref) || MQ.tpl), g = {};
   try { g = JSON.parse(localStorage.getItem(chave) || '{}'); } catch (e) {}
   var nm = ref ? propNomes(MQ.lab, ref) : { t: (TPLS.filter(function (t) { return t[0] === MQ.tpl; })[0] || ['', 'Peça'])[1], s: '' };
   var cores = ref ? coresDe(ref).map(function (c) { return c[0]; }) : [];
