@@ -1250,7 +1250,8 @@ var CORES_TPL = [['#FFFFFF', 'Branco'], ['#1b1b1b', 'Preto'], ['#1F2A44', 'Azul 
 function ladoAtual() { return MQ.L[MQ.modo === 'foto' ? (MQ.fv || 'F') : MQ.lado]; }
 function mqLadoAtivo() { return MQ.modo === 'foto' ? (MQ.fv || 'F') : MQ.lado; }
 function mqTemCostas(l) { return /costa|tr[aá]s|nuca/i.test(String(l && l.pers || '')); }
-function mqTplRef() { var n = String(MQ.lab || '') + ' ' + String(MQ.ref || ''); return /casaco|softshell|parka|blus[aã]o|jaqueta|colete|corta.?vento|chaqueta|jacket|forro|polar|richmond/i.test(n) ? 'casaco' : /hood|capuz|canguru/i.test(n) ? 'hoodie' : /sweat/i.test(n) ? 'sweat' : /polo/i.test(n) ? 'polo' : 'tshirt'; }
+function mqTplRef() { return mqTplDe(String(MQ.lab || '') + ' ' + String(MQ.ref || '')); }
+function mqTplDe(n) { return /casaco|softshell|parka|blus[aã]o|jaqueta|colete|corta.?vento|chaqueta|jacket|forro|polar|richmond/i.test(n) ? 'casaco' : /hood|capuz|canguru/i.test(n) ? 'hoodie' : /sweat/i.test(n) ? 'sweat' : /polo/i.test(n) ? 'polo' : 'tshirt'; }
 function mqCorFoto() { return corAlvoPeca(MQ.ref || '_', MQ.corOrc) || corParaHex(MQ.corOrc) || '#1F2A44'; }
 // caixa da peça na foto (fração da imagem): tudo o que difere da cor das bordas
 function mqCaixaPeca(im) {
@@ -2028,7 +2029,7 @@ function opPainel() {
       if (!a.pos.length) h += '<div class="mut">Sem personalização no orçamento.</div>';
       a.pos.forEach(function (p, pi) {
         var mq = opMaqDe(a, p);
-        h += '<div class="mut" style="margin-top:6px">' + esc(p.nome) + ' — ' + (mq ? 'maquete: ' + fmtCm(mq.wcm) + ' × ' + fmtCm(mq.hcm) + ' cm' : '<span style="color:#b45309">sem maquete deste lado</span>') + '</div><div class="row" style="flex-wrap:wrap;gap:6px">' +
+        h += '<div class="mut" style="margin-top:6px">' + esc(p.nome) + ' — ' + (mq ? 'maquete: ' + fmtCm(mq.wcm) + ' × ' + fmtCm(mq.hcm) + ' cm' : '<span style="color:#b45309">sem maquete guardada — vai no esboço, na posição habitual (' + (opLado(p.nome) === 'C' ? 'costas ao centro, 25 cm' : (/centr|grande|total/i.test(p.nome) ? 'frente ao centro, 25 cm' : 'peito, 9 cm')) + ')</span>') + '</div><div class="row" style="flex-wrap:wrap;gap:6px">' +
           (mq ? '<button onclick="OP.arts[' + ai + '].pos[' + pi + '].logo=-1;opPainel()" style="padding:3px;border-radius:8px;border:2px solid ' + (p.logo === -1 ? 'var(--azul2)' : '#d5dbe6') + ';background:#fff"><img src="' + mq.mock + '" style="height:58px;display:block"></button>' : '') +
           OP.logos.map(function (lg, li) { return '<button onclick="OP.arts[' + ai + '].pos[' + pi + '].logo=' + li + ';opPainel()" style="padding:3px;border-radius:8px;border:2px solid ' + (p.logo === li ? 'var(--azul2)' : '#d5dbe6') + ';background:#8a93a8"><img src="data:' + lg.tipo + ';base64,' + lg.b64 + '" style="height:46px;max-width:90px;object-fit:contain;display:block"></button>'; }).join('') +
           '<label class="btn sec" style="width:auto;padding:6px 10px;margin:0">＋ Desenho<input type="file" accept="image/*" style="display:none" onchange="opNovoDesenho(this,' + ai + ',' + pi + ')"></label></div>';
@@ -2051,21 +2052,31 @@ function opNovoDesenho(inp, ai, pi) {
   }; rd.readAsDataURL(f);
 }
 // carrega imagens e desenha as páginas (sem gravar nada)
+// sem maquete guardada: esboço da peça (frente ou costas) na cor do artigo, com o desenho na posição habitual
+function opPosPadrao(nome, lado, tpl) {
+  var n = String(nome || '');
+  if (lado === 'C') return /nuca|gola|ombro/i.test(n) ? { x: 0.5, y: 0.12, wcm: 9 } : { x: 0.5, y: tpl === 'hoodie' ? 0.38 : 0.32, wcm: 25 };
+  if (/centr|grande|total|frente inteira/i.test(n)) return { x: 0.5, y: 0.36, wcm: 25 };
+  if (/direit/i.test(n)) return { x: tpl === 'casaco' ? 0.32 : 0.36, y: 0.30, wcm: 9 };
+  return { x: tpl === 'casaco' ? 0.68 : 0.64, y: 0.30, wcm: 9 };   // por omissão: peito esquerdo
+}
+function opEsbocoAuto(a, p, des) {
+  var lado = opLado(p.nome), tpl = mqTplDe(String(a.l.produto || '') + ' ' + String(a.l.ref || '')), cor = corParaHex(a.l.cor) || '#1F2A44';
+  var pp = opPosPadrao(p.nome, lado, tpl), W = 700, H = 805, c = document.createElement('canvas'); c.width = W; c.height = H;
+  var x = c.getContext('2d'), gb = x.createLinearGradient(0, 0, 0, H); gb.addColorStop(0, '#f7f8fb'); gb.addColorStop(1, '#e4e8ef'); x.fillStyle = gb; x.fillRect(0, 0, W, H);
+  var ar = areaVista(W, H, 0, 1); desenharModelo(x, ar.ox, ar.oy, ar.w, tpl, cor, lado);
+  var hcm = des ? pp.wcm * des.height / des.width : 0;
+  if (des) desenharLado(x, { des: des, x: pp.x, y: pp.y, wcm: pp.wcm, rot: 0 }, ar);
+  return { mock: c, mq: { wcm: pp.wcm, hcm: Math.round(hcm * 10) / 10, gola: Math.round(pp.y * 70 - hcm / 2), meio: Math.round((pp.x - 0.5) * 52 * 10) / 10, rot: 0, auto: true } };
+}
 function opPaginas(info) {
   var sel = OP.arts.filter(function (a) { return a.incluir && a.pos.length; });
   var metades = []; sel.forEach(function (a) { a.pos.forEach(function (p) { metades.push({ a: a, p: p, mq: p.logo === -1 ? opMaqDe(a, p) : null }); }); });
-  var fotos = {};
-  var pF = sel.reduce(function (pr, a) { return pr.then(function () {
-    if (a.pos.every(function (p) { return p.logo === -1 && opMaqDe(a, p); })) return null;
-    return fotoHD(a.l.ref).then(function (r) { return r && r.b64 ? r : semFalha(call('apiFoto', a.l.ref)); }).then(imgDeR).then(function (im) { fotos[a.i] = im ? pintarPeca(im, a.l.ref, a.l.cor) : null; }); }); }, Promise.resolve());
   var pM = Promise.all(metades.map(function (m) {
     if (m.mq) return Promise.all([opImg(m.mq.des), opImg(m.mq.mock)]).then(function (r) { m.des = r[0]; m.mock = r[1]; });
-    var lg = OP.logos[m.p.logo]; return (lg ? imgDeR(lg) : Promise.resolve(null)).then(function (im) { m.des = im; });
+    var lg = OP.logos[m.p.logo]; return (lg ? imgDeR(lg) : Promise.resolve(null)).then(function (im) { m.des = im; var e = opEsbocoAuto(m.a, m.p, im); m.mock = e.mock; m.mq = e.mq; });
   }));
-  return Promise.all([pF, pM, imgDe(LOGO_INO)]).then(function (r) {
-    metades.forEach(function (m) { if (!m.mock) m.mock = fotos[m.a.i] || null; });
-    return opDesenhar(OP.o, info, metades, r[2]);
-  });
+  return Promise.all([pM, imgDe(LOGO_INO)]).then(function (r) { return opDesenhar(OP.o, info, metades, r[1]); });
 }
 function opGerar() {
   var sel = OP.arts.filter(function (a) { return a.incluir && a.pos.length; });
@@ -2131,6 +2142,7 @@ function opDesenhar(o, info, metades, ino) {
       if (mq.meio != null) ex.push(Math.abs(mq.meio) < 0.6 ? 'centrado' : 'lado ' + (mq.meio < 0 ? (lado === 'C' ? 'esquerdo' : 'direito') : (lado === 'C' ? 'direito' : 'esquerdo')) + ' de quem veste (centro a ' + fmtCm(Math.round(Math.abs(mq.meio))) + ' cm do meio)');
       if (mq.gola != null) ex.push('topo a ≈ ' + Math.max(0, Math.round(mq.gola)) + ' cm da gola');
       if (mq.rot) ex.push('rodado ' + mq.rot + '°');
+      if (mq.auto) ex.push('posição habitual');
       if (ex.length) txt(ex.join(' · '), XL, y + 17, '#4a5570', 600, 10.5);
     } else txt('Sem maquete: confirmar medidas e posição antes de estampar.', XL, y, '#b45309', 700, 11);
     // tamanhos
