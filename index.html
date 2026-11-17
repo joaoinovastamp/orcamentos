@@ -1797,7 +1797,7 @@ function desenharProd() {
     '<div class="g2"><div><label>Fase</label><select id="pFase">' + opts(p.fases, p.fase) + '</select></div>' +
     '<div><label>Data de entrega</label><input id="pEnt" type="date" value="' + esc(p.entrega) + '"></div></div>' +
     '<label>Notas de produção (oficina)</label><textarea id="pNotas" rows="2" placeholder="ex.: logótipo frente 25 cm, costas nome + nº">' + esc(p.notas) + '</textarea>' +
-    '<div class="acts"><button class="btn ok" onclick="guardarProd()">Guardar produção</button><button class="btn sec" onclick="fichaProducao()">Ficha de produção (PDF)</button></div>' +
+    '<div class="acts"><button class="btn ok" onclick="guardarProd()">Guardar produção</button><button class="btn sec" onclick="fichaProducao()">Ordem de produção (PDF)</button></div>' +
     infoMaqProd(p) + '<div id="opZona"></div></div>';
   h += '<h2>Pagamentos</h2><div class="card"><div class="tot"><span>Total c/ IVA</span><span class="num">' + eur(p.tC) + '</span></div>' +
     '<div class="tot"><span>Pago</span><span class="num">' + eur(p.pago) + '</span></div>' +
@@ -1828,14 +1828,137 @@ function apagarPag(linha) {
   call('apiPagamentoApagar', ATUAL.num, linha).then(function (p) { PR = p; desenharProd(); });
 }
 var OPPDF = null;
+// ---------------- ordem de produção (desenhada na app, no modelo da casa) ----------------
+// Só os artigos com personalização; desenho da frente pequeno, das costas grande; tabela de tamanhos para a oficina preencher.
+var OP = null;
+function opTemPers(n) { n = String(n || '').trim(); return n && n !== 'Sem personalização'; }
+function opPosGrande(nome) { return /costa|tr[aá]s|nuca|grande/i.test(String(nome || '')); }
 function fichaProducao() {
-  call('apiFichaProducao', ATUAL.num).then(function (r) {
-    var bin = atob(r.b64), a = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
-    OPPDF = { nome: r.nome, a: a }; PR.op = r.op;
-    var pode = false; try { pode = navigator.canShare && navigator.canShare({ files: [new File([a], r.nome, { type: 'application/pdf' })] }); } catch (e) {}
-    $('opZona').innerHTML = '<div class="ok-t" style="margin-top:6px">✓ ' + esc(r.nome) + ' (guardada em "INOVASTAMP - Produção")</div><div class="acts"><button class="btn sec" onclick="opAbrir()">Abrir</button>' +
-      (pode ? '<button class="btn sec" onclick="opPartilhar()">Partilhar</button>' : '') + '</div>';
+  var num = ATUAL.num; $('opZona').innerHTML = '<div class="card mut" style="text-align:center">A preparar…</div>';
+  Promise.all([call('apiAbrir', num), semFalha(call('apiLogos', ATUAL.cliente, ATUAL.nif || '')), TAMS ? Promise.resolve(TAMS) : semFalha(call('apiTamanhos'))]).then(function (r) {
+    var o = r[0], logos = r[1] || []; if (r[2]) TAMS = r[2];
+    var arts = o.linhas.map(function (l, i) {
+      var pos = [l.pers1, l.pers2].filter(opTemPers).map(function (p, k) { return { nome: p, logo: -1 }; });
+      return { i: i, l: l, incluir: pos.length > 0, pos: pos };
+    });
+    // por omissão: desenho mais antigo na posição pequena, o mais recente na grande (o último carregado costuma ser o novo)
+    arts.forEach(function (a) { a.pos.forEach(function (p) { p.logo = logos.length ? (opPosGrande(p.nome) ? 0 : logos.length - 1) : -1; }); });
+    OP = { num: num, o: o, logos: logos, arts: arts };
+    opPainel();
   });
+}
+function opPainel() {
+  var h = '<div class="card" style="margin-top:8px"><b>Ordem de produção</b><div class="mut">Escolhe os artigos e o desenho de cada posição. Só os artigos marcados entram.</div>';
+  OP.arts.forEach(function (a, ai) {
+    h += '<div style="border-top:1px solid var(--linha);margin-top:10px;padding-top:8px"><label style="display:flex;gap:8px;align-items:center;font-weight:700;color:var(--txt)"><input type="checkbox" style="width:auto"' + (a.incluir ? ' checked' : '') +
+      ' onchange="OP.arts[' + ai + '].incluir=this.checked;opPainel()"> ' + esc(nomeCurto(a.l.produto)) + ' · ' + esc(a.l.cor || '') + ' · ' + a.l.qtd + ' pç</label>';
+    if (a.incluir) {
+      if (!a.pos.length) h += '<div class="mut">Sem personalização no orçamento.</div>';
+      a.pos.forEach(function (p, pi) {
+        h += '<div class="mut" style="margin-top:6px">' + esc(p.nome) + (opPosGrande(p.nome) ? ' (grande)' : ' (pequeno)') + '</div><div class="row" style="flex-wrap:wrap;gap:6px">' +
+          OP.logos.map(function (lg, li) { return '<button onclick="OP.arts[' + ai + '].pos[' + pi + '].logo=' + li + ';opPainel()" style="padding:3px;border-radius:8px;border:2px solid ' + (p.logo === li ? 'var(--azul2)' : '#d5dbe6') + ';background:#8a93a8"><img src="data:' + lg.tipo + ';base64,' + lg.b64 + '" style="height:46px;max-width:90px;object-fit:contain;display:block"></button>'; }).join('') +
+          '<label class="btn sec" style="width:auto;padding:6px 10px;margin:0">＋ Desenho<input type="file" accept="image/*" style="display:none" onchange="opNovoDesenho(this,' + ai + ',' + pi + ')"></label></div>';
+      });
+    }
+    h += '</div>';
+  });
+  h += '<div class="acts"><button class="btn ok" onclick="opGerar()">Gerar ordem de produção (PDF)</button></div><div id="opRes"></div></div>';
+  $('opZona').innerHTML = h;
+}
+function opNovoDesenho(inp, ai, pi) {
+  var f = inp.files && inp.files[0]; if (!f) return;
+  var rd = new FileReader(); rd.onload = function () {
+    var b64 = String(rd.result).replace(/^data:[^;]+;base64,/, ''), tipo = f.type || 'image/png';
+    OP.logos.unshift({ nome: f.name, tipo: tipo, b64: b64 });
+    OP.arts.forEach(function (a) { a.pos.forEach(function (p) { if (p.logo >= 0) p.logo++; }); });
+    OP.arts[ai].pos[pi].logo = 0; opPainel();
+    semFalha(call('apiLogoGuardar', OP.o.cliente, OP.o.nif || '', b64, f.name, tipo)).then(function () { msg('Desenho guardado na pasta do cliente.'); });
+  }; rd.readAsDataURL(f);
+}
+function opGerar() {
+  var sel = OP.arts.filter(function (a) { return a.incluir; });
+  if (!sel.length) { msg('Escolhe pelo menos um artigo.', true); return; }
+  $('opRes').innerHTML = '<div class="mut" style="text-align:center;margin-top:8px">A desenhar a ordem de produção…</div>';
+  call('apiOPNumero', OP.num).then(function (info) {
+    var fotos = {};
+    var pF = sel.reduce(function (p, a) { return p.then(function () {
+      return fotoHD(a.l.ref).then(function (r) { return r && r.b64 ? r : semFalha(call('apiFoto', a.l.ref)); }).then(imgDeR).then(function (im) { fotos[a.i] = im ? pintarPeca(im, a.l.ref, a.l.cor) : null; }); }); }, Promise.resolve());
+    var pL = Promise.all(OP.logos.map(function (x) { return imgDeR(x); }));
+    return Promise.all([pF, pL, imgDe(LOGO_INO)]).then(function (r) {
+      var pags = opDesenhar(OP.o, info, sel, fotos, r[1], r[2]);
+      return Promise.all(pags.map(canvasJpeg));
+    }).then(function (pgs) {
+      var bytes = pdfDeJpegs(pgs), nome = 'OP ' + info.op + ' ' + String(OP.o.cliente || '').replace(/[\\\/:*?"<>|]/g, '') + '.pdf';
+      OPPDF = { nome: nome, a: bytes }; if (typeof PR !== 'undefined' && PR) PR.op = info.op;
+      var pode = false; try { pode = navigator.canShare && navigator.canShare({ files: [new File([bytes], nome, { type: 'application/pdf' })] }); } catch (e) {}
+      $('opRes').innerHTML = '<div class="ok-t" style="margin-top:6px">✓ ' + esc(nome) + '</div><div class="acts"><button class="btn sec" onclick="opAbrir()">Abrir</button>' + (pode ? '<button class="btn sec" onclick="opPartilhar()">Partilhar</button>' : '') + '</div>';
+      semFalha(call('apiOPGuardar', OP.num, info.op, OP.o.cliente, b64DeBytes(bytes)));
+    });
+  });
+}
+function opDesenhar(o, info, sel, fotos, logos, ino) {
+  var F = '"Inter", Arial, sans-serif', S = 2, PW = 794, PH = 1123, M = 44, XR = PW - M, pags = [], x = null;
+  function nova() { var c = document.createElement('canvas'); c.width = PW * S; c.height = PH * S; x = c.getContext('2d'); x.setTransform(S, 0, 0, S, 0, 0); x.fillStyle = '#fff'; x.fillRect(0, 0, PW, PH); pags.push(c); }
+  function fnt(w, s) { x.font = w + ' ' + s + 'px ' + F; }
+  function txt(t, X, Y, cor, w, s, al, ls) { fnt(w, s); x.fillStyle = cor; esp(x, (ls || 0) + 'px'); x.textAlign = al || 'left'; x.fillText(t, X, Y); esp(x, '0px'); x.textAlign = 'left'; }
+  function larg(t, w, s) { fnt(w, s); return x.measureText(t).width; }
+  function cab(H) { var g = x.createRadialGradient(PW, 0, 10, PW, 0, PW * 1.25); g.addColorStop(0, '#2b4a85'); g.addColorStop(0.5, '#1a2c52'); g.addColorStop(1, '#0f1a30'); x.fillStyle = g; x.fillRect(0, 0, PW, H);
+    var b = x.createLinearGradient(0, 0, PW, 0); b.addColorStop(0, '#C2268F'); b.addColorStop(0.45, '#7b3fa0'); b.addColorStop(1, '#1f8fd6'); x.fillStyle = b; x.fillRect(0, H - 3, PW, 3); }
+  function cabe(im, X, Y, W, H) { if (!im) return; var k = Math.min(W / im.width, H / im.height), w = im.width * k, h = im.height * k; x.drawImage(im, X + (W - w) / 2, Y + (H - h) / 2, w, h); }
+  function caixa(X, Y, W, H, r, fill, stroke) { rr(x, X, Y, W, H, r); if (fill) { x.fillStyle = fill; x.fill(); } if (stroke) { x.strokeStyle = stroke; x.lineWidth = 1; x.stroke(); } }
+  var entrega = info.entrega ? orcData(info.entrega) : '—', hoje = orcData(new Date().toISOString().substring(0, 10));
+  var pecas = sel.reduce(function (s, a) { return s + (Number(a.l.qtd) || 0); }, 0);
+  sel.forEach(function (a, ai) {
+    var l = a.l; nova(); cab(150);
+    caixa(M, 30, 76, 76, 12, '#fff'); cabe(ino, M + 6, 36, 64, 64);
+    txt('ORDEM DE PRODUÇÃO', M + 96, 52, '#aab6d3', 600, 9, 'left', 2.6);
+    txt(info.op, M + 94, 88, '#fff', 900, 34, 'left', -1);
+    txt('Orçamento ' + o.num + (sel.length > 1 ? ' · artigo ' + (ai + 1) + ' de ' + sel.length : ''), M + 96, 108, '#f3b6dc', 700, 11);
+    txt('CLIENTE', XR, 52, '#aab6d3', 600, 9, 'right', 2.6);
+    var cli = String(o.cliente || '').toUpperCase(), fs = 16; while (larg(cli, 800, fs) > 300 && fs > 10) fs--; txt(cli, XR, 76, '#fff', 800, fs, 'right');
+    [['Emitida', hoje], ['Entrega', entrega], ['Fase', info.fase || '—'], ['Peças (OP)', pecas + '']].forEach(function (m, i) { var X = XR - 300 + i * 78; txt(m[0].toUpperCase(), X, 104, '#aab6d3', 600, 7.5, 'left', 1.6); txt(m[1], X, 120, '#fff', 700, 10); });
+    // artigo
+    var y = 176; caixa(M, y, 170, 190, 14, '#f3f5f9'); cabe(fotos[a.i], M + 8, y + 8, 154, 174);
+    var nm = propNomes(l.produto, l.ref), X0 = M + 190;
+    txt(String(nm.t || l.ref).toUpperCase(), X0, y + 30, '#14213D', 900, 24, 'left', -0.5);
+    if (nm.s) txt(nm.s, X0, y + 50, '#4a5570', 400, 12);
+    txt('Ref. ' + l.ref, X0, y + 74, '#33405e', 600, 11);
+    if (l.cor) { var cw = larg(corSemCodigo(l.cor), 700, 12) + 34; caixa(X0, y + 86, cw, 26, 13, null, '#d5dae5'); x.fillStyle = corHex(corSemCodigo(l.cor)); x.beginPath(); x.arc(X0 + 14, y + 99, 6, 0, 7); x.fill(); x.strokeStyle = '#b9c0cc'; x.stroke(); txt(corSemCodigo(l.cor), X0 + 26, y + 104, '#14213D', 700, 12); }
+    txt(l.qtd + ' peças', X0, y + 146, '#14213D', 900, 20);
+    txt('Personalização: ' + (a.pos.map(function (p) { return p.nome; }).join(' + ') || 'nenhuma'), X0, y + 172, '#9b1c72', 700, 12);
+    // desenhos: pequeno (frente) e grande (costas)
+    y = 392; txt('DESENHOS A ESTAMPAR', M, y, '#8a93a8', 700, 8.5, 'left', 2.4); y += 12;
+    var peq = a.pos.filter(function (p) { return !opPosGrande(p.nome); }), gr = a.pos.filter(function (p) { return opPosGrande(p.nome); });
+    if (!gr.length && peq.length > 1) gr = [peq.pop()];
+    var hD = 330, wP = 200, xs = M;
+    peq.forEach(function (p, k) { var Y = y + k * (hD / Math.max(1, peq.length)), H = hD / Math.max(1, peq.length) - (peq.length > 1 ? 8 : 0);
+      caixa(xs, Y, wP, H, 14, '#8a93a8'); cabe(logos[p.logo], xs + 22, Y + 30, wP - 44, H - 52); caixa(xs + 10, Y + 10, larg(p.nome.toUpperCase(), 800, 9) + 18, 20, 10, '#fff'); txt(p.nome.toUpperCase(), xs + 19, Y + 24, '#14213D', 800, 9); });
+    var xg = peq.length ? M + wP + 16 : M, wg = XR - xg;
+    gr.forEach(function (p) { caixa(xg, y, wg, hD, 14, '#8a93a8'); cabe(logos[p.logo], xg + 26, y + 36, wg - 52, hD - 58); caixa(xg + 12, y + 12, larg(p.nome.toUpperCase(), 800, 10) + 20, 22, 11, '#fff'); txt(p.nome.toUpperCase(), xg + 22, y + 27, '#14213D', 800, 10); });
+    if (!a.pos.length) txt('Sem personalização', M, y + 30, '#8a93a8', 600, 12);
+    // tabela de tamanhos
+    y = 760; txt('TAMANHOS — A OFICINA PREENCHE O QUE ESTAMPOU', M, y, '#8a93a8', 700, 8.5, 'left', 2.4); y += 12;
+    var ped = {}; lerTam(l.tam).forEach(function (t) { ped[t.tam] = (ped[t.tam] || 0) + t.qtd; });
+    var ts = (typeof tamanhosDe === 'function' ? tamanhosDe(l.ref) : []).map(function (t) { return String(t).toUpperCase(); });
+    Object.keys(ped).forEach(function (t) { if (ts.indexOf(t) < 0) ts.push(t); }); if (!ts.length) ts = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL'];
+    var colL = 120, nC = ts.length + 1, cw2 = Math.min(70, (XR - M - colL) / nC), rowH = 34, linhasT = [['Pedido', true], ['Estampado', false], ['Com defeito', false]];
+    var tw = colL + cw2 * nC;
+    caixa(M, y, tw, rowH * (linhasT.length + 1), 10, null, '#c9cfdb');
+    x.fillStyle = '#14213D'; rr(x, M, y, tw, rowH, 10); x.fill(); x.fillRect(M, y + rowH / 2, tw, rowH / 2);
+    ts.concat(['TOTAL']).forEach(function (t, k) { txt(t, M + colL + cw2 * k + cw2 / 2, y + 22, '#fff', 800, 11, 'center'); });
+    linhasT.forEach(function (rw, ri) { var Y = y + rowH * (ri + 1); x.fillStyle = '#e1e5ee'; x.fillRect(M, Y, tw, 1); txt(rw[0], M + 12, Y + 22, '#14213D', 700, 11);
+      ts.forEach(function (t, k) { var X = M + colL + cw2 * k; x.fillStyle = '#e1e5ee'; x.fillRect(X, Y, 1, rowH); if (rw[1] && ped[t]) txt(String(ped[t]), X + cw2 / 2, Y + 22, '#14213D', 800, 13, 'center'); });
+      var XT = M + colL + cw2 * ts.length; x.fillStyle = '#e1e5ee'; x.fillRect(XT, Y, 1, rowH); if (rw[1]) txt(String(Object.keys(ped).length ? Object.keys(ped).reduce(function (s, k) { return s + ped[k]; }, 0) : l.qtd), XT + cw2 / 2, Y + 22, '#14213D', 900, 13, 'center'); });
+    x.fillStyle = '#e1e5ee'; x.fillRect(M + colL, y, 1, rowH * (linhasT.length + 1));
+    if (!Object.keys(ped).length) txt('Tamanhos ainda não indicados no orçamento — total: ' + l.qtd + ' peças.', M, y + rowH * 4 + 18, '#b45309', 700, 10);
+    // notas e verificação
+    y = 948; txt('NOTAS DA PRODUÇÃO', M, y, '#8a93a8', 700, 8.5, 'left', 2.4);
+    caixa(M, y + 8, XR - M, 64, 10, null, '#c9cfdb'); if (info.notas) { fnt(400, 10); linhas(x, info.notas, XR - M - 20).slice(0, 3).forEach(function (s, i) { txt(s, M + 10, y + 26 + i * 14, '#33405e', 400, 10); }); }
+    var cx = M; ['Material recebido', 'Conferido (cores/tamanhos)', 'Estampado', 'Controlo final', 'Embalado'].forEach(function (c) { caixa(cx, y + 86, 13, 13, 3, null, '#8a93a8'); txt(c, cx + 19, y + 97, '#33405e', 600, 9.5); cx += larg(c, 600, 9.5) + 38; });
+    x.fillStyle = '#e6e9f0'; x.fillRect(0, PH - 44, PW, 1);
+    txt('INOVASTAMP, Lda · ordem de produção interna', M, PH - 20, '#8a93a8', 400, 8.5); txt(info.op + ' · ' + o.num + ' · página ' + (ai + 1) + '/' + sel.length, XR, PH - 20, '#8a93a8', 400, 8.5, 'right');
+  });
+  return pags;
 }
 function opAbrir() { var url = URL.createObjectURL(new Blob([OPPDF.a], { type: 'application/pdf' })), l = document.createElement('a'); l.href = url; l.download = OPPDF.nome; l.target = '_blank'; document.body.appendChild(l); l.click(); l.remove(); }
 function opPartilhar() { navigator.share({ files: [new File([OPPDF.a], OPPDF.nome, { type: 'application/pdf' })], title: OPPDF.nome }).catch(function () {}); }
