@@ -520,11 +520,11 @@ function pdfDeJpegs(pgs) {
   obj(2, '<< /Type /Pages /Kids [' + kids.join(' ') + '] /Count ' + n + ' >>');
   var anot = [];
   pgs.forEach(function (p, i) {
-    var pn = 3 + i * 3, cn = pn + 1, im = pn + 2, cont = 'q 595.28 0 0 841.89 0 0 cm /Im0 Do Q', refs = [];
+    var dt = p.w > p.h, PWp = dt ? 841.89 : 595.28, PHp = dt ? 595.28 : 841.89, pn = 3 + i * 3, cn = pn + 1, im = pn + 2, cont = 'q ' + PWp + ' 0 0 ' + PHp + ' 0 0 cm /Im0 Do Q', refs = [];
     (p.links || []).forEach(function (l) { if (!l.url) return; var nn = prox++; refs.push(nn + ' 0 R');
-      anot.push([nn, '<< /Type /Annot /Subtype /Link /Rect [' + [l.x * K, 841.89 - (l.y + l.h) * K, (l.x + l.w) * K, 841.89 - l.y * K].map(function (v) { return v.toFixed(2); }).join(' ') +
+      anot.push([nn, '<< /Type /Annot /Subtype /Link /Rect [' + [l.x * K, PHp - (l.y + l.h) * K, (l.x + l.w) * K, PHp - l.y * K].map(function (v) { return v.toFixed(2); }).join(' ') +
         '] /Border [0 0 0] /A << /S /URI /URI ' + pdfStr(l.url) + ' >> >>']); });
-    obj(pn, '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /XObject << /Im0 ' + im + ' 0 R >> >> /Contents ' + cn + ' 0 R' + (refs.length ? ' /Annots [' + refs.join(' ') + ']' : '') + ' >>');
+    obj(pn, '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + PWp + ' ' + PHp + '] /Resources << /XObject << /Im0 ' + im + ' 0 R >> >> /Contents ' + cn + ' 0 R' + (refs.length ? ' /Annots [' + refs.join(' ') + ']' : '') + ' >>');
     obj(cn, '<< /Length ' + cont.length + ' >>', enc.encode(cont));
     obj(im, '<< /Type /XObject /Subtype /Image /Width ' + p.w + ' /Height ' + p.h + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + p.b.length + ' >>', p.b);
   });
@@ -1247,7 +1247,69 @@ try { var _d = JSON.parse(localStorage.getItem('inovastamp_dtf') || 'null'); if 
 function guardarDtf() { var o = { preco: DTF.preco, rolo: DTF.rolo, gap: DTF.gap, aplic: DTF.aplic, margem: DTF.margem, inteiros: DTF.inteiros }; try { localStorage.setItem('inovastamp_dtf', JSON.stringify(o)); } catch (e) {} guardarCustosNuvem('dtf', o); }
 var TPLS = [['tshirt', 'T-shirt'], ['polo', 'Polo'], ['sweat', 'Sweat'], ['hoodie', 'Hoodie'], ['casaco', 'Casaco']];
 var CORES_TPL = [['#FFFFFF', 'Branco'], ['#1b1b1b', 'Preto'], ['#1F2A44', 'Azul marinho'], ['#2E5DAA', 'Royal'], ['#9AA0A6', 'Cinza'], ['#B3202A', 'Vermelho'], ['#2E7D32', 'Verde'], ['#F2C200', 'Amarelo'], ['#E8611A', 'Laranja'], ['#5B3A29', 'Castanho']];
-function ladoAtual() { return MQ.L[MQ.modo === 'foto' ? 'F' : MQ.lado]; }
+function ladoAtual() { return MQ.L[MQ.modo === 'foto' ? (MQ.fv || 'F') : MQ.lado]; }
+function mqLadoAtivo() { return MQ.modo === 'foto' ? (MQ.fv || 'F') : MQ.lado; }
+function mqTemCostas(l) { return /costa|tr[aá]s|nuca/i.test(String(l && l.pers || '')); }
+function mqTplRef() { var n = String(MQ.lab || '') + ' ' + String(MQ.ref || ''); return /casaco|softshell|parka|blus[aã]o|jaqueta|colete|corta.?vento|chaqueta|jacket|forro|polar|richmond/i.test(n) ? 'casaco' : /hood|capuz|canguru/i.test(n) ? 'hoodie' : /sweat/i.test(n) ? 'sweat' : /polo/i.test(n) ? 'polo' : 'tshirt'; }
+function mqCorFoto() { return corAlvoPeca(MQ.ref || '_', MQ.corOrc) || corParaHex(MQ.corOrc) || '#1F2A44'; }
+// caixa da peça na foto (fração da imagem): tudo o que difere da cor das bordas
+function mqCaixaPeca(im) {
+  if (!im) return null; if (im._bb !== undefined) return im._bb;
+  var W0 = im.naturalWidth || im.width, H0 = im.naturalHeight || im.height, k = Math.min(1, 220 / Math.max(W0, H0)), W = Math.max(1, Math.round(W0 * k)), H = Math.max(1, Math.round(H0 * k));
+  var c = document.createElement('canvas'); c.width = W; c.height = H; var x = c.getContext('2d'), d;
+  try { x.drawImage(im, 0, 0, W, H); d = x.getImageData(0, 0, W, H).data; } catch (e) { im._bb = null; return null; }
+  var br = []; for (var i = 0; i < W; i++) br.push(i, (H - 1) * W + i); for (i = 0; i < H; i++) br.push(i * W, i * W + W - 1);
+  var med = [0, 1, 2].map(function (cc) { var a = br.map(function (q) { return d[q * 4 + cc]; }).sort(function (u, v) { return u - v; }); return a[a.length >> 1]; });
+  var col = new Int32Array(W), lin = new Int32Array(H);
+  for (var yy = 0; yy < H; yy++) for (var xx = 0; xx < W; xx++) { var o = (yy * W + xx) * 4; if (d[o + 3] > 30 && Math.abs(d[o] - med[0]) + Math.abs(d[o + 1] - med[1]) + Math.abs(d[o + 2] - med[2]) > 60) { col[xx]++; lin[yy]++; } }
+  var lim = 2, x0 = 0, x1 = W - 1, y0 = 0, y1 = H - 1;
+  while (x0 < W && col[x0] <= lim) x0++; while (x1 > x0 && col[x1] <= lim) x1--; while (y0 < H && lin[y0] <= lim) y0++; while (y1 > y0 && lin[y1] <= lim) y1--;
+  im._bb = (x1 - x0 > W * 0.2 && y1 - y0 > H * 0.2) ? [x0 / W, y0 / H, (x1 + 1) / W, (y1 + 1) / H] : null;
+  return im._bb;
+}
+// área da foto equivalente à do esboço: as posições e os cm são os mesmos nos dois
+function mqAreaFoto(im, W, H, dx, dy, dw, dh) {
+  var bb = mqCaixaPeca(im); if (!bb) return null;
+  var gx = dx + bb[0] * dw, gy = dy + bb[1] * dh, gw = (bb[2] - bb[0]) * dw, gh = (bb[3] - bb[1]) * dh, s = gw / 0.96, sy = gh / 1.08;
+  return { ppc: 0.56 * s / 52, zona: [gx + 0.20 * s, gy + 0.08 * sy, 0.56 * s, sy], foto: true };
+}
+function mqParaModelo(l) {   // maquete sempre feita no esboço da peça certa, na cor do orçamento
+  MQ.modo = 'modelo'; MQ.tpl = mqTplRef(); var h = mqCorFoto(); if (h) MQ.cor = h;
+  MQ.vista = l && mqTemCostas(l) ? 'FC' : 'F'; MQ.lado = 'F';
+}
+function mqFotoCostas(inp) { mqLerImagem(inp, function (im) { MQ.pecaC = im; MQ.fv = 'C'; irMaquete(); }); }
+function mqCostasPara(l, p) {
+  var C = MQ.L.C;
+  if (p && p.C) { POS_K.forEach(function (k) { if (p.C[k] !== undefined) C[k] = p.C[k]; }); return; }
+  if (!mqTemCostas(l)) { C.des = null; C.orig = null; C.src = null; return; }
+  if (!C.des) { var b = MQ.logoBase || (MQ.L.F.des ? MQ.L.F : null); if (b) { C.orig = b.orig; C.des = b.des; C.src = b.src; C.nome = b.nome; C.tipo = b.tipo; } }
+  C.x = 0.5; C.y = 0.40; C.wcm = 25; C.rot = 0;
+}
+function mqImgLado(l, W, H) {
+  var c = document.createElement('canvas'); c.width = W; c.height = H; var x = c.getContext('2d'), fv = MQ.fv, vi = MQ.vista, la = MQ.lado;
+  if (MQ.modo === 'foto') MQ.fv = l; else { MQ.vista = l; MQ.lado = l; }
+  mqDesenharEm(x, W, H, false); MQ.fv = fv; MQ.vista = vi; MQ.lado = la; return c;
+}
+function mqEsboco(l, W, H) {
+  var g = { modo: MQ.modo, tpl: MQ.tpl, cor: MQ.cor };
+  if (MQ.modo === 'foto') { MQ.modo = 'modelo'; MQ.tpl = mqTplRef(); MQ.cor = mqCorFoto(); }
+  var c = mqImgLado(l, W, H); MQ.modo = g.modo; MQ.tpl = g.tpl; MQ.cor = g.cor; return c;
+}
+function mqDadosLados() {
+  var r = { ref: MQ.ref || '', cor: MQ.corOrc || '', lados: {} };
+  ['F', 'C'].forEach(function (l) { var L = MQ.L[l]; if (!L.des) return;
+    var mock = mqEsboco(l, 700, 805).toDataURL('image/jpeg', 0.88), d = L.des, k = Math.min(1, 1600 / Math.max(d.width, d.height)), c = document.createElement('canvas');
+    c.width = Math.round(d.width * k); c.height = Math.round(d.height * k); c.getContext('2d').drawImage(d, 0, 0, c.width, c.height);
+    var hcm = L.wcm * d.height / d.width, tpl = true;
+    r.lados[l] = { mock: mock, des: c.toDataURL('image/png'), wcm: Math.round(L.wcm * 10) / 10, hcm: Math.round(hcm * 10) / 10, x: L.x, y: L.y, rot: L.rot || 0,
+      gola: tpl ? Math.round((L.y * 52 / 0.56 - hcm / 2) * 10) / 10 : null, meio: tpl ? Math.round((L.x - 0.5) * 52 * 10) / 10 : null }; });
+  mqDesenhar(); return r;
+}
+function mqComposta() {
+  var a = mqImgLado('F', 800, 920), b = mqImgLado('C', 800, 920), c = document.createElement('canvas'); c.width = 1640; c.height = 980; var x = c.getContext('2d');
+  x.fillStyle = '#fff'; x.fillRect(0, 0, 1640, 980); x.drawImage(a, 10, 10); x.drawImage(b, 830, 10); x.fillStyle = '#6b7385'; x.font = 'bold 22px sans-serif'; x.textAlign = 'center';
+  x.fillText('FRENTE', 410, 960); x.fillText('COSTAS', 1230, 960); mqDesenhar(); return c;
+}
 
 function irMaquete() {
   if (!CUSTOS_OK) { carregarCustos(irMaquete); return; }
@@ -1262,7 +1324,11 @@ function irMaquete() {
     '<div class="acts"><button class="btn sec" onclick="mqGuardarOrc()">Guardar maquete no orçamento</button></div><div class="mut">A maquete guardada no orçamento vai na ficha de produção.</div></div><div class="card">';
   if (foto) {
     h += '<label>Peça</label><div class="row"><button class="prod-btn sp" onclick="mqProduto()">' + esc(MQ.lab || 'Escolher produto…') + '</button></div>' +
-      '<div class="acts"><label class="btn sec" style="text-align:center;margin:0">Foto própria<input type="file" accept="image/*" style="display:none" onchange="mqFotoPropria(this)"></label></div>' + (MQ.pecaOrig ? mqCorCartao() : '');
+      '<div class="acts"><label class="btn sec" style="text-align:center;margin:0">Foto própria<input type="file" accept="image/*" style="display:none" onchange="mqFotoPropria(this)"></label></div>' + (MQ.pecaOrig ? mqCorCartao() : '') +
+      '<label>Ver e editar</label><div class="chips"><button class="chip' + ((MQ.fv || 'F') === 'F' ? ' on' : '') + '" onclick="MQ.fv=\'F\';irMaquete()">Frente' + (MQ.L.F.des ? ' ✓' : '') + '</button>' +
+      '<button class="chip' + (MQ.fv === 'C' ? ' on' : '') + '" onclick="MQ.fv=\'C\';irMaquete()">Costas' + (MQ.L.C.des ? ' ✓' : '') + '</button></div>' +
+      (MQ.fv === 'C' ? '<div class="acts"><label class="btn sec" style="text-align:center;margin:0">' + (MQ.pecaC ? 'Trocar foto das costas' : 'Foto das costas (opcional)') + '<input type="file" accept="image/*" style="display:none" onchange="mqFotoCostas(this)"></label>' + (MQ.pecaC ? '<button class="btn sec" onclick="MQ.pecaC=null;irMaquete()">Usar o esboço</button>' : '') + '</div>' +
+        (MQ.pecaC ? '' : '<div class="mut">Sem foto das costas: mostra o esboço da peça (' + esc((TPLS.filter(function (t) { return t[0] === mqTplRef(); })[0] || ['', ''])[1]) + ') na cor escolhida, com medidas reais.</div>') : '');
   } else {
     h += '<label>Modelo</label><div class="chips">' + TPLS.map(function (t) { return '<button class="chip' + (MQ.tpl === t[0] ? ' on' : '') + '" onclick="MQ.tpl=\'' + t[0] + '\';irMaquete()">' + t[1] + '</button>'; }).join('') + '</div>' +
       '<label>Cor da peça</label><div class="row" style="flex-wrap:wrap;gap:6px">' + CORES_TPL.map(function (c) {
@@ -1274,15 +1340,15 @@ function irMaquete() {
       '<label>Desenho a editar</label><div class="chips"><button class="chip' + (MQ.lado === 'F' ? ' on' : '') + '" onclick="MQ.lado=\'F\';if(MQ.vista===\'C\')MQ.vista=\'F\';irMaquete()">Frente' + (MQ.L.F.des ? ' ✓' : '') + '</button>' +
       '<button class="chip' + (MQ.lado === 'C' ? ' on' : '') + '" onclick="MQ.lado=\'C\';if(MQ.vista===\'F\')MQ.vista=\'C\';irMaquete()">Costas' + (MQ.L.C.des ? ' ✓' : '') + '</button></div>';
   }
-  h += '<div class="acts"><label class="btn" style="text-align:center;margin:0;color:#fff">' + (L.des ? 'Trocar desenho' : 'Desenho do cliente') + (foto ? '' : (MQ.lado === 'F' ? ' (frente)' : ' (costas)')) +
+  h += '<div class="acts"><label class="btn" style="text-align:center;margin:0;color:#fff">' + (L.des ? 'Trocar desenho' : 'Desenho do cliente') + (mqLadoAtivo() === 'F' ? ' (frente)' : ' (costas)') +
     '<input type="file" accept="image/*" style="display:none" onchange="mqDesenho(this)"></label>' + (L.des ? '<button class="btn sec" onclick="mqTirar()">Tirar desenho</button>' : '') + '</div>' +
     '<label style="display:flex;gap:8px;align-items:center;margin-top:8px"><input type="checkbox" style="width:auto" ' + (MQ.semFundo ? 'checked ' : '') + 'onchange="MQ.semFundo=this.checked;mqProcessar()"> Tirar o fundo branco do desenho</label></div>';
   h += '<canvas id="mqCv" class="cv"></canvas><div class="mut" style="margin:4px 2px 8px">Arrasta o desenho com o dedo; com dois dedos aumenta/diminui.' + (foto ? '' : ' O tamanho na peça é real (peito ≈ 52 cm).') + '</div>';
   h += '<div class="card"><div class="g3"><div><label>Largura (cm)</label><input id="mqW" type="number" step="0.5" value="' + L.wcm + '" onchange="ladoAtual().wcm=Number(this.value)||1;mqDesenhar();dtfDoDesenho()"></div>' +
     '<div><label>Rodar (°)</label><input type="number" step="5" value="' + L.rot + '" onchange="ladoAtual().rot=Number(this.value)||0;mqDesenhar()"></div>' +
-    (foto ? '<div><label>Escala da foto (cm)</label><input type="number" step="1" value="' + MQ.pecaCm + '" onchange="MQ.pecaCm=Number(this.value)||70;mqDesenhar()"></div>' : '<div></div>') + '</div>' +
-    (foto ? '<div class="mut">"Escala da foto" = quantos cm de largura cabem na foto (ajusta até o desenho ficar com o tamanho real).</div>' : '') +
-    '<div class="acts">' + (foto || MQ.lado === 'F' ? '<button class="btn sec" onclick="mqPos(0.5,0.42,25)">Frente</button><button class="btn sec" onclick="mqPos(0.64,0.33,9)">Peito esq.</button>'
+    (foto && !(MQ._areas.F && MQ._areas.F.foto) ? '<div><label>Escala da foto (cm)</label><input type="number" step="1" value="' + MQ.pecaCm + '" onchange="MQ.pecaCm=Number(this.value)||70;mqDesenhar()"></div>' : '<div></div>') + '</div>' +
+    (foto && !(MQ._areas.F && MQ._areas.F.foto) ? '<div class="mut">"Escala da foto" = quantos cm de largura cabem na foto (ajusta até o desenho ficar com o tamanho real).</div>' : '') +
+    '<div class="acts">' + (mqLadoAtivo() === 'F' ? '<button class="btn sec" onclick="mqPos(0.5,0.42,25)">Frente</button><button class="btn sec" onclick="mqPos(0.64,0.33,9)">Peito esq.</button>'
       : '<button class="btn sec" onclick="mqPos(0.5,0.40,30)">Costas</button><button class="btn sec" onclick="mqPos(0.5,0.27,22)">Nuca / ombros</button>') +
     '<button class="btn sec" onclick="mqPos(0.5,0.5)">Centro</button></div>' +
     '<div class="acts"><button class="btn sec" onclick="mqGuardar()">⬇ Descarregar foto</button></div>' +
@@ -1296,7 +1362,7 @@ function irMaquete() {
 function mqVista(v) { MQ.vista = v; if (v !== 'FC') MQ.lado = v; irMaquete(); }
 function mqPos(x, y, w) { var L = ladoAtual(); L.x = x; L.y = y; if (w && L.des) { L.wcm = w; var i = $('mqW'); if (i) i.value = w; dtfDoDesenho(); } mqDesenhar(); }
 function mqTirar() { var L = ladoAtual(); L.des = null; L.orig = null; irMaquete(); }
-function mqProduto() { PICK = { i: null, cb: function (lab, ref) { MQ.lab = lab; MQ.ref = ref; MQ.peca = null; MQ.pecaOrig = null; MQ.corOrc = ''; MQ.modo = 'foto'; irMaquete(); } }; abrirModal(); }
+function mqProduto() { PICK = { i: null, cb: function (lab, ref) { MQ.lab = lab; MQ.ref = ref; MQ.peca = null; MQ.pecaOrig = null; MQ.pecaC = null; MQ.fv = 'F'; MQ.corOrc = ''; mqParaModelo(null); irMaquete(); } }; abrirModal(); }
 // foto grande (pasta HD) com prazo: se o servidor demorar, segue com a miniatura do catálogo
 function fotoHD(ref) {
   var cache = fotoHD.c || (fotoHD.c = {}); if (cache[ref] !== undefined) return Promise.resolve(cache[ref]);
@@ -1457,12 +1523,12 @@ function mqLogos() {
     LOGOS = l;
     $('logoZona').innerHTML = l.length ? '<div class="row" style="flex-wrap:wrap;gap:8px;margin-top:8px">' + l.map(function (x, i) {
       return '<img src="data:' + x.tipo + ';base64,' + x.b64 + '" title="' + esc(x.nome) + '" onclick="mqUsarLogo(' + i + ')" style="width:72px;height:72px;object-fit:contain;border:1px solid var(--linha);border-radius:8px;background:#fff;padding:4px">';
-    }).join('') + '</div><div class="mut">Toca num logótipo para o pôr na ' + (MQ.modo === 'foto' || MQ.lado === 'F' ? 'frente' : 'costas') + '.</div>' : '<div class="mut" style="margin-top:6px">Este cliente ainda não tem logótipos guardados.</div>';
+    }).join('') + '</div><div class="mut">Toca num logótipo para o pôr na ' + (mqLadoAtivo() === 'F' ? 'frente' : 'costas') + '.</div>' : '<div class="mut" style="margin-top:6px">Este cliente ainda não tem logótipos guardados.</div>';
   });
 }
 function mqUsarLogo(i) {
   var x = LOGOS[i], L = ladoAtual(), im = new Image();
-  im.onload = function () { L.orig = im; L.src = im.src; L.nome = x.nome; L.tipo = x.tipo; mqProcessarLado(L, function () { if (MQ.orcLinhas) MQ.logoBase = { orig: L.orig, des: L.des, src: L.src, nome: L.nome, tipo: L.tipo }; irMaquete(); dtfDoDesenho(); }); };
+  im.onload = function () { L.orig = im; L.src = im.src; L.nome = x.nome; L.tipo = x.tipo; mqProcessarLado(L, function () { if (MQ.orcLinhas && L === MQ.L.F) { MQ.logoBase = { orig: L.orig, des: L.des, src: L.src, nome: L.nome, tipo: L.tipo }; if (!MQ.L.C.des && mqTemCostas(MQ.orcLinhas[MQ.orcI])) mqCostasPara(MQ.orcLinhas[MQ.orcI], null); } irMaquete(); dtfDoDesenho(); }); };
   im.src = 'data:' + x.tipo + ';base64,' + x.b64;
 }
 function mqGuardarLogo() {
@@ -1475,7 +1541,11 @@ function mqGuardarLogo() {
 function mqGuardarOrc() {
   var n = (MQ.orc || '').trim(); if (!n) { msg('Indica o nº do orçamento (ex.: ORC-2026-0008).', true); return; }
   if (!temDesenho()) { msg('Carrega primeiro o desenho do cliente.', true); return; }
-  mqB64(function (b64) { call('apiMaqueteGuardar', n, b64).then(function () { msg('Maquete guardada no orçamento ' + n + '. Vai na ficha de produção.'); }); });
+  var dados = mqDadosLados();
+  var fim = function (b64) { call('apiMaqueteGuardar', n, b64).then(function () { return call('apiMaqLadosGuardar', n, MQ.ref || '_', JSON.stringify(dados)); })
+    .then(function () { msg('Maquete guardada no orçamento ' + n + ' (' + (dados.lados.F ? 'frente' : '') + (dados.lados.F && dados.lados.C ? ' e ' : '') + (dados.lados.C ? 'costas' : '') + '). Vai na ordem de produção.'); }); };
+  if (PROP.formato !== 'proposta' && MQ.modo === 'foto' && MQ.L.F.des && MQ.L.C.des) fim(mqComposta().toDataURL('image/png').split(',')[1]);
+  else mqB64(function (b64) { fim(b64); });
 }
 function mqProcessar() { mqProcessarLado(MQ.L.F, function () { mqProcessarLado(MQ.L.C, function () { mqDesenhar(); dtfDoDesenho(); }); }); }
 function mqProcessarLado(L, cb) {
@@ -1570,9 +1640,17 @@ function mqDesenharEm(x, W, H, exportar, semFundo) {
   if (semFundo) x.clearRect(0, 0, W, H); else { x.fillStyle = '#fff'; x.fillRect(0, 0, W, H); }
   MQ._areas = {};
   if (MQ.modo === 'foto') {
-    if (MQ.peca) { var k = Math.min(W / MQ.peca.width, H / MQ.peca.height); x.drawImage(MQ.peca, (W - MQ.peca.width * k) / 2, (H - MQ.peca.height * k) / 2, MQ.peca.width * k, MQ.peca.height * k); }
-    else { x.fillStyle = '#9aa3b5'; x.font = '15px sans-serif'; x.textAlign = 'center'; x.fillText('Escolhe a peça (ou carrega uma foto)', W / 2, H / 2); }
-    var af = { ppc: W / MQ.pecaCm, zona: [0, 0, W, H] }; MQ._areas.F = af; desenharLado(x, MQ.L.F, af);
+    var fv = MQ.fv || 'F';
+    if (fv === 'C' && !MQ.pecaC) { var ac = areaVista(W, H, 0, 1); MQ._areas.C = ac; desenharModelo(x, ac.ox, ac.oy, ac.w, mqTplRef(), mqCorFoto(), 'C'); desenharLado(x, MQ.L.C, ac); }
+    else {
+      var pc = fv === 'C' ? MQ.pecaC : MQ.peca;
+      var af = null;
+      if (pc) { var k = Math.min(W / pc.width, H / pc.height), dw0 = pc.width * k, dh0 = pc.height * k, dx0 = (W - dw0) / 2, dy0 = (H - dh0) / 2; x.drawImage(pc, dx0, dy0, dw0, dh0); af = mqAreaFoto(MQ.pecaOrig && fv === 'F' ? MQ.pecaOrig : pc, W, H, dx0, dy0, dw0, dh0); }
+      else { x.fillStyle = '#9aa3b5'; x.font = '15px sans-serif'; x.textAlign = 'center'; x.fillText('Escolhe a peça (ou carrega uma foto)', W / 2, H / 2); }
+      if (!af) af = { ppc: W / MQ.pecaCm, zona: [0, 0, W, H] };
+      MQ._areas[fv] = af; desenharLado(x, MQ.L[fv], af);
+    }
+    if (exportar || MQ.L.C.des) { x.fillStyle = '#6b7385'; x.font = 'bold 12px sans-serif'; x.textAlign = 'left'; x.fillText(fv === 'F' ? 'FRENTE' : 'COSTAS', 8, 16); }
   } else {
     var vs = vistas();
     vs.forEach(function (l, i) {
@@ -1583,7 +1661,7 @@ function mqDesenharEm(x, W, H, exportar, semFundo) {
     });
   }
   if (exportar) {
-    var txt = ['F', 'C'].filter(function (l) { return MQ.L[l].des && (MQ.modo !== 'foto' || l === 'F') && vistas().indexOf(l) >= 0; })
+    var txt = ['F', 'C'].filter(function (l) { return MQ.L[l].des && (MQ.modo !== 'foto' ? vistas().indexOf(l) >= 0 : l === (MQ.fv || 'F')); })
       .map(function (l) { var L = MQ.L[l]; return (MQ.modo === 'foto' ? 'desenho ' : (l === 'F' ? 'frente ' : 'costas ')) + fmtCm(L.wcm) + ' × ' + fmtCm(L.wcm * L.des.height / L.des.width) + ' cm'; }).join(' · ');
     x.fillStyle = 'rgba(31,56,100,.9)'; x.fillRect(0, H - 26, W, 26); x.fillStyle = '#fff'; x.font = '12px sans-serif'; x.textAlign = 'left';
     x.fillText('INOVASTAMP · simulação' + (txt ? ' · ' + txt : '') + ' · cores e proporções aproximadas', 8, H - 9);
@@ -1592,7 +1670,7 @@ function mqDesenharEm(x, W, H, exportar, semFundo) {
 function fmtCm(v) { return String(Math.round(v * 10) / 10).replace('.', ','); }
 function dtfAltura() { var L = ladoAtual(); return L.des ? L.wcm * L.des.height / L.des.width : DTF.h; }
 function ladoNoPonto(px) {
-  if (MQ.modo === 'foto') return 'F';
+  if (MQ.modo === 'foto') return MQ.fv || 'F';
   var vs = vistas(); if (vs.length === 1) return vs[0];
   var a = MQ._areas.C; return a && px >= a.ox - 4 ? 'C' : 'F';
 }
@@ -1607,7 +1685,7 @@ function mqEventos(cv) {
   cv.addEventListener('pointermove', function (e) {
     var L = ladoAtual(); if (!pts[e.pointerId] || !L.des) return;
     var ant = pts[e.pointerId]; pts[e.pointerId] = { x: e.offsetX, y: e.offsetY };
-    var ids = Object.keys(pts), a = MQ._areas[MQ.modo === 'foto' ? 'F' : MQ.lado]; if (!a) return;
+    var ids = Object.keys(pts), a = MQ._areas[mqLadoAtivo()]; if (!a) return;
     if (ids.length === 1) { L.x = Math.min(1.2, Math.max(-0.2, L.x + (e.offsetX - ant.x) / a.zona[2])); L.y = Math.min(1.2, Math.max(-0.2, L.y + (e.offsetY - ant.y) / a.zona[3])); }
     else if (ids.length === 2) {
       var p = pts[ids[0]], q = pts[ids[1]], d = Math.hypot(p.x - q.x, p.y - q.y);
@@ -1618,7 +1696,7 @@ function mqEventos(cv) {
   var fim = function (e) { delete pts[e.pointerId]; if (ini) { ini = null; dtfDoDesenho(); } };
   cv.addEventListener('pointerup', fim); cv.addEventListener('pointercancel', fim);
 }
-function temDesenho() { return !!(MQ.L.F.des || (MQ.modo !== 'foto' && MQ.L.C.des)); }
+function temDesenho() { return !!(MQ.L.F.des || MQ.L.C.des); }
 function mqBlob(cb) {
   if (PROP.formato === 'proposta') {
     propGuardarCampos2(); propGerar(function (c) { c.toBlob(function (b) { cb(b); }, 'image/png'); }); return;
@@ -1828,40 +1906,51 @@ function apagarPag(linha) {
   call('apiPagamentoApagar', ATUAL.num, linha).then(function (p) { PR = p; desenharProd(); });
 }
 var OPPDF = null;
-// ---------------- ordem de produção (desenhada na app, no modelo da casa) ----------------
-// Só os artigos com personalização; desenho da frente pequeno, das costas grande; tabela de tamanhos para a oficina preencher.
+// ---------------- ordem de produção (A4 deitado: uma posição por metade — frente à esquerda, costas à direita) ----------------
+// O desenho vem da maquete guardada no orçamento (com medidas e posição); se não houver, usa o logótipo escolhido.
 var OP = null;
 function opTemPers(n) { n = String(n || '').trim(); return n && n !== 'Sem personalização'; }
 function opPosGrande(nome) { return /costa|tr[aá]s|nuca|grande/i.test(String(nome || '')); }
+function opLado(nome) { return opPosGrande(nome) ? 'C' : 'F'; }
+function opImg(src) { return new Promise(function (ok) { if (!src) { ok(null); return; } var im = new Image(); im.onload = function () { ok(im); }; im.onerror = function () { ok(null); }; im.src = src; }); }
+function opMaqDe(a, p) {
+  var M = OP.maq || {}, m = M[a.l.ref] || M[String(a.l.ref || '').split(' ')[0]] || M._ || null;
+  if (!m) { var ks = Object.keys(M); if (ks.length === 1) m = M[ks[0]]; }
+  return m && m.lados ? (m.lados[opLado(p.nome)] || null) : null;
+}
 function fichaProducao() {
   var num = ATUAL.num; $('opZona').innerHTML = '<div class="card mut" style="text-align:center">A preparar…</div>';
-  Promise.all([call('apiAbrir', num), semFalha(call('apiLogos', ATUAL.cliente, ATUAL.nif || '')), TAMS ? Promise.resolve(TAMS) : semFalha(call('apiTamanhos'))]).then(function (r) {
+  Promise.all([call('apiAbrir', num), semFalha(call('apiLogos', ATUAL.cliente, ATUAL.nif || '')), TAMS ? Promise.resolve(TAMS) : semFalha(call('apiTamanhos')), semFalha(call('apiMaqLados', num))]).then(function (r) {
     var o = r[0], logos = r[1] || []; if (r[2]) TAMS = r[2];
     var arts = o.linhas.map(function (l, i) {
-      var pos = [l.pers1, l.pers2].filter(opTemPers).map(function (p, k) { return { nome: p, logo: -1 }; });
+      var pos = [l.pers1, l.pers2].filter(opTemPers).map(function (p) { return { nome: p, logo: -1 }; });
+      pos.sort(function (u, v) { return (opPosGrande(u.nome) ? 1 : 0) - (opPosGrande(v.nome) ? 1 : 0); });   // frente primeiro, costas depois
       return { i: i, l: l, incluir: pos.length > 0, pos: pos };
     });
-    // por omissão: desenho mais antigo na posição pequena, o mais recente na grande (o último carregado costuma ser o novo)
-    arts.forEach(function (a) { a.pos.forEach(function (p) { p.logo = logos.length ? (opPosGrande(p.nome) ? 0 : logos.length - 1) : -1; }); });
-    OP = { num: num, o: o, logos: logos, arts: arts };
+    OP = { num: num, o: o, logos: logos, arts: arts, maq: r[3] || {} };
+    // por omissão: o desenho da maquete; se não houver, o logótipo (o mais recente nas costas, o mais antigo na frente)
+    arts.forEach(function (a) { a.pos.forEach(function (p) { p.logo = opMaqDe(a, p) ? -1 : (logos.length ? (opPosGrande(p.nome) ? 0 : logos.length - 1) : -1); }); });
     opPainel();
   });
 }
 function opPainel() {
-  var h = '<div class="card" style="margin-top:8px"><b>Ordem de produção</b><div class="mut">Escolhe os artigos e o desenho de cada posição. Só os artigos marcados entram.</div>';
+  var h = '<div class="card" style="margin-top:8px"><b>Ordem de produção</b><div class="mut">A4 deitado: cada posição numa metade da folha (frente à esquerda, costas à direita). Só entram os artigos marcados.</div>';
   OP.arts.forEach(function (a, ai) {
     h += '<div style="border-top:1px solid var(--linha);margin-top:10px;padding-top:8px"><label style="display:flex;gap:8px;align-items:center;font-weight:700;color:var(--txt)"><input type="checkbox" style="width:auto"' + (a.incluir ? ' checked' : '') +
       ' onchange="OP.arts[' + ai + '].incluir=this.checked;opPainel()"> ' + esc(nomeCurto(a.l.produto)) + ' · ' + esc(a.l.cor || '') + ' · ' + a.l.qtd + ' pç</label>';
     if (a.incluir) {
       if (!a.pos.length) h += '<div class="mut">Sem personalização no orçamento.</div>';
       a.pos.forEach(function (p, pi) {
-        h += '<div class="mut" style="margin-top:6px">' + esc(p.nome) + (opPosGrande(p.nome) ? ' (grande)' : ' (pequeno)') + '</div><div class="row" style="flex-wrap:wrap;gap:6px">' +
+        var mq = opMaqDe(a, p);
+        h += '<div class="mut" style="margin-top:6px">' + esc(p.nome) + ' — ' + (mq ? 'maquete: ' + fmtCm(mq.wcm) + ' × ' + fmtCm(mq.hcm) + ' cm' : '<span style="color:#b45309">sem maquete deste lado</span>') + '</div><div class="row" style="flex-wrap:wrap;gap:6px">' +
+          (mq ? '<button onclick="OP.arts[' + ai + '].pos[' + pi + '].logo=-1;opPainel()" style="padding:3px;border-radius:8px;border:2px solid ' + (p.logo === -1 ? 'var(--azul2)' : '#d5dbe6') + ';background:#fff"><img src="' + mq.mock + '" style="height:58px;display:block"></button>' : '') +
           OP.logos.map(function (lg, li) { return '<button onclick="OP.arts[' + ai + '].pos[' + pi + '].logo=' + li + ';opPainel()" style="padding:3px;border-radius:8px;border:2px solid ' + (p.logo === li ? 'var(--azul2)' : '#d5dbe6') + ';background:#8a93a8"><img src="data:' + lg.tipo + ';base64,' + lg.b64 + '" style="height:46px;max-width:90px;object-fit:contain;display:block"></button>'; }).join('') +
           '<label class="btn sec" style="width:auto;padding:6px 10px;margin:0">＋ Desenho<input type="file" accept="image/*" style="display:none" onchange="opNovoDesenho(this,' + ai + ',' + pi + ')"></label></div>';
       });
     }
     h += '</div>';
   });
+  if (!Object.keys(OP.maq || {}).length) h += '<div class="alerta" style="margin-top:8px">Este orçamento ainda não tem maquete com frente/costas. Faz a maquete ("✎ Maquete deste orçamento") e carrega em "Guardar maquete no orçamento" — o desenho, as medidas e a posição vêm de lá.</div>';
   h += '<div class="acts"><button class="btn ok" onclick="opGerar()">Gerar ordem de produção (PDF)</button></div><div id="opRes"></div></div>';
   $('opZona').innerHTML = h;
 }
@@ -1875,89 +1964,112 @@ function opNovoDesenho(inp, ai, pi) {
     semFalha(call('apiLogoGuardar', OP.o.cliente, OP.o.nif || '', b64, f.name, tipo)).then(function () { msg('Desenho guardado na pasta do cliente.'); });
   }; rd.readAsDataURL(f);
 }
-function opGerar() {
-  var sel = OP.arts.filter(function (a) { return a.incluir; });
-  if (!sel.length) { msg('Escolhe pelo menos um artigo.', true); return; }
-  $('opRes').innerHTML = '<div class="mut" style="text-align:center;margin-top:8px">A desenhar a ordem de produção…</div>';
-  call('apiOPNumero', OP.num).then(function (info) {
-    var fotos = {};
-    var pF = sel.reduce(function (p, a) { return p.then(function () {
-      return fotoHD(a.l.ref).then(function (r) { return r && r.b64 ? r : semFalha(call('apiFoto', a.l.ref)); }).then(imgDeR).then(function (im) { fotos[a.i] = im ? pintarPeca(im, a.l.ref, a.l.cor) : null; }); }); }, Promise.resolve());
-    var pL = Promise.all(OP.logos.map(function (x) { return imgDeR(x); }));
-    return Promise.all([pF, pL, imgDe(LOGO_INO)]).then(function (r) {
-      var pags = opDesenhar(OP.o, info, sel, fotos, r[1], r[2]);
-      return Promise.all(pags.map(canvasJpeg));
-    }).then(function (pgs) {
-      var bytes = pdfDeJpegs(pgs), nome = 'OP ' + info.op + ' ' + String(OP.o.cliente || '').replace(/[\\\/:*?"<>|]/g, '') + '.pdf';
-      OPPDF = { nome: nome, a: bytes }; if (typeof PR !== 'undefined' && PR) PR.op = info.op;
-      var pode = false; try { pode = navigator.canShare && navigator.canShare({ files: [new File([bytes], nome, { type: 'application/pdf' })] }); } catch (e) {}
-      $('opRes').innerHTML = '<div class="ok-t" style="margin-top:6px">✓ ' + esc(nome) + '</div><div class="acts"><button class="btn sec" onclick="opAbrir()">Abrir</button>' + (pode ? '<button class="btn sec" onclick="opPartilhar()">Partilhar</button>' : '') + '</div>';
-      semFalha(call('apiOPGuardar', OP.num, info.op, OP.o.cliente, b64DeBytes(bytes)));
-    });
+// carrega imagens e desenha as páginas (sem gravar nada)
+function opPaginas(info) {
+  var sel = OP.arts.filter(function (a) { return a.incluir && a.pos.length; });
+  var metades = []; sel.forEach(function (a) { a.pos.forEach(function (p) { metades.push({ a: a, p: p, mq: p.logo === -1 ? opMaqDe(a, p) : null }); }); });
+  var fotos = {};
+  var pF = sel.reduce(function (pr, a) { return pr.then(function () {
+    if (a.pos.every(function (p) { return p.logo === -1 && opMaqDe(a, p); })) return null;
+    return fotoHD(a.l.ref).then(function (r) { return r && r.b64 ? r : semFalha(call('apiFoto', a.l.ref)); }).then(imgDeR).then(function (im) { fotos[a.i] = im ? pintarPeca(im, a.l.ref, a.l.cor) : null; }); }); }, Promise.resolve());
+  var pM = Promise.all(metades.map(function (m) {
+    if (m.mq) return Promise.all([opImg(m.mq.des), opImg(m.mq.mock)]).then(function (r) { m.des = r[0]; m.mock = r[1]; });
+    var lg = OP.logos[m.p.logo]; return (lg ? imgDeR(lg) : Promise.resolve(null)).then(function (im) { m.des = im; });
+  }));
+  return Promise.all([pF, pM, imgDe(LOGO_INO)]).then(function (r) {
+    metades.forEach(function (m) { if (!m.mock) m.mock = fotos[m.a.i] || null; });
+    return opDesenhar(OP.o, info, metades, r[2]);
   });
 }
-function opDesenhar(o, info, sel, fotos, logos, ino) {
-  var F = '"Inter", Arial, sans-serif', S = 2, PW = 794, PH = 1123, M = 44, XR = PW - M, pags = [], x = null;
+function opGerar() {
+  var sel = OP.arts.filter(function (a) { return a.incluir && a.pos.length; });
+  if (!sel.length) { msg('Escolhe pelo menos um artigo com personalização.', true); return; }
+  $('opRes').innerHTML = '<div class="mut" style="text-align:center;margin-top:8px">A desenhar a ordem de produção…</div>';
+  var info;
+  call('apiOPNumero', OP.num).then(function (i) { info = i; return opPaginas(info); }).then(function (pags) { return Promise.all(pags.map(canvasJpeg)); }).then(function (pgs) {
+    var bytes = pdfDeJpegs(pgs), nome = 'OP ' + info.op + ' ' + String(OP.o.cliente || '').replace(/[\\\/:*?"<>|]/g, '') + '.pdf';
+    OPPDF = { nome: nome, a: bytes }; if (typeof PR !== 'undefined' && PR) PR.op = info.op;
+    var pode = false; try { pode = navigator.canShare && navigator.canShare({ files: [new File([bytes], nome, { type: 'application/pdf' })] }); } catch (e) {}
+    $('opRes').innerHTML = '<div class="ok-t" style="margin-top:6px">✓ ' + esc(nome) + '</div><div class="acts"><button class="btn sec" onclick="opAbrir()">Abrir / imprimir</button>' + (pode ? '<button class="btn sec" onclick="opPartilhar()">Partilhar</button>' : '') + '</div>';
+    semFalha(call('apiOPGuardar', OP.num, info.op, OP.o.cliente, b64DeBytes(bytes)));
+  });
+}
+function opDesenhar(o, info, metades, ino) {
+  var F = '"Inter", Arial, sans-serif', S = 2, PW = 1123, PH = 794, HW = PW / 2, M = 26, pags = [], x = null;
   function nova() { var c = document.createElement('canvas'); c.width = PW * S; c.height = PH * S; x = c.getContext('2d'); x.setTransform(S, 0, 0, S, 0, 0); x.fillStyle = '#fff'; x.fillRect(0, 0, PW, PH); pags.push(c); }
   function fnt(w, s) { x.font = w + ' ' + s + 'px ' + F; }
   function txt(t, X, Y, cor, w, s, al, ls) { fnt(w, s); x.fillStyle = cor; esp(x, (ls || 0) + 'px'); x.textAlign = al || 'left'; x.fillText(t, X, Y); esp(x, '0px'); x.textAlign = 'left'; }
   function larg(t, w, s) { fnt(w, s); return x.measureText(t).width; }
-  function cab(H) { var g = x.createRadialGradient(PW, 0, 10, PW, 0, PW * 1.25); g.addColorStop(0, '#2b4a85'); g.addColorStop(0.5, '#1a2c52'); g.addColorStop(1, '#0f1a30'); x.fillStyle = g; x.fillRect(0, 0, PW, H);
-    var b = x.createLinearGradient(0, 0, PW, 0); b.addColorStop(0, '#C2268F'); b.addColorStop(0.45, '#7b3fa0'); b.addColorStop(1, '#1f8fd6'); x.fillStyle = b; x.fillRect(0, H - 3, PW, 3); }
   function cabe(im, X, Y, W, H) { if (!im) return; var k = Math.min(W / im.width, H / im.height), w = im.width * k, h = im.height * k; x.drawImage(im, X + (W - w) / 2, Y + (H - h) / 2, w, h); }
-  function caixa(X, Y, W, H, r, fill, stroke) { rr(x, X, Y, W, H, r); if (fill) { x.fillStyle = fill; x.fill(); } if (stroke) { x.strokeStyle = stroke; x.lineWidth = 1; x.stroke(); } }
-  var entrega = info.entrega ? orcData(info.entrega) : '—', hoje = orcData(new Date().toISOString().substring(0, 10));
-  var pecas = sel.reduce(function (s, a) { return s + (Number(a.l.qtd) || 0); }, 0);
-  sel.forEach(function (a, ai) {
-    var l = a.l; nova(); cab(150);
-    caixa(M, 30, 76, 76, 12, '#fff'); cabe(ino, M + 6, 36, 64, 64);
-    txt('ORDEM DE PRODUÇÃO', M + 96, 52, '#aab6d3', 600, 9, 'left', 2.6);
-    txt(info.op, M + 94, 88, '#fff', 900, 34, 'left', -1);
-    txt('Orçamento ' + o.num + (sel.length > 1 ? ' · artigo ' + (ai + 1) + ' de ' + sel.length : ''), M + 96, 108, '#f3b6dc', 700, 11);
-    txt('CLIENTE', XR, 52, '#aab6d3', 600, 9, 'right', 2.6);
-    var cli = String(o.cliente || '').toUpperCase(), fs = 16; while (larg(cli, 800, fs) > 300 && fs > 10) fs--; txt(cli, XR, 76, '#fff', 800, fs, 'right');
-    [['Emitida', hoje], ['Entrega', entrega], ['Fase', info.fase || '—'], ['Peças (OP)', pecas + '']].forEach(function (m, i) { var X = XR - 300 + i * 78; txt(m[0].toUpperCase(), X, 104, '#aab6d3', 600, 7.5, 'left', 1.6); txt(m[1], X, 120, '#fff', 700, 10); });
-    // artigo
-    var y = 176; caixa(M, y, 170, 190, 14, '#f3f5f9'); cabe(fotos[a.i], M + 8, y + 8, 154, 174);
-    var nm = propNomes(l.produto, l.ref), X0 = M + 190;
-    txt(String(nm.t || l.ref).toUpperCase(), X0, y + 30, '#14213D', 900, 24, 'left', -0.5);
-    if (nm.s) txt(nm.s, X0, y + 50, '#4a5570', 400, 12);
-    txt('Ref. ' + l.ref, X0, y + 74, '#33405e', 600, 11);
-    if (l.cor) { var cw = larg(corSemCodigo(l.cor), 700, 12) + 34; caixa(X0, y + 86, cw, 26, 13, null, '#d5dae5'); x.fillStyle = corHex(corSemCodigo(l.cor)); x.beginPath(); x.arc(X0 + 14, y + 99, 6, 0, 7); x.fill(); x.strokeStyle = '#b9c0cc'; x.stroke(); txt(corSemCodigo(l.cor), X0 + 26, y + 104, '#14213D', 700, 12); }
-    txt(l.qtd + ' peças', X0, y + 146, '#14213D', 900, 20);
-    txt('Personalização: ' + (a.pos.map(function (p) { return p.nome; }).join(' + ') || 'nenhuma'), X0, y + 172, '#9b1c72', 700, 12);
-    // desenhos: pequeno (frente) e grande (costas)
-    y = 392; txt('DESENHOS A ESTAMPAR', M, y, '#8a93a8', 700, 8.5, 'left', 2.4); y += 12;
-    var peq = a.pos.filter(function (p) { return !opPosGrande(p.nome); }), gr = a.pos.filter(function (p) { return opPosGrande(p.nome); });
-    if (!gr.length && peq.length > 1) gr = [peq.pop()];
-    var hD = 330, wP = 200, xs = M;
-    peq.forEach(function (p, k) { var Y = y + k * (hD / Math.max(1, peq.length)), H = hD / Math.max(1, peq.length) - (peq.length > 1 ? 8 : 0);
-      caixa(xs, Y, wP, H, 14, '#8a93a8'); cabe(logos[p.logo], xs + 22, Y + 30, wP - 44, H - 52); caixa(xs + 10, Y + 10, larg(p.nome.toUpperCase(), 800, 9) + 18, 20, 10, '#fff'); txt(p.nome.toUpperCase(), xs + 19, Y + 24, '#14213D', 800, 9); });
-    var xg = peq.length ? M + wP + 16 : M, wg = XR - xg;
-    gr.forEach(function (p) { caixa(xg, y, wg, hD, 14, '#8a93a8'); cabe(logos[p.logo], xg + 26, y + 36, wg - 52, hD - 58); caixa(xg + 12, y + 12, larg(p.nome.toUpperCase(), 800, 10) + 20, 22, 11, '#fff'); txt(p.nome.toUpperCase(), xg + 22, y + 27, '#14213D', 800, 10); });
-    if (!a.pos.length) txt('Sem personalização', M, y + 30, '#8a93a8', 600, 12);
-    // tabela de tamanhos
-    y = 760; txt('TAMANHOS — A OFICINA PREENCHE O QUE ESTAMPOU', M, y, '#8a93a8', 700, 8.5, 'left', 2.4); y += 12;
+  function caixa(X, Y, W, H, r, fill, stroke, lw) { rr(x, X, Y, W, H, r); if (fill) { x.fillStyle = fill; x.fill(); } if (stroke) { x.strokeStyle = stroke; x.lineWidth = lw || 1; x.stroke(); } }
+  var entrega = info.entrega ? orcData(info.entrega) : '—', npag = Math.ceil(metades.length / 2);
+  function metade(m, X0, pg) {
+    var a = m.a, l = a.l, p = m.p, XL = X0 + M, XR = X0 + HW - M, W = XR - XL, lado = opLado(p.nome);
+    // cabeçalho
+    var g = x.createLinearGradient(X0, 0, X0 + HW, 0); g.addColorStop(0, '#0f1a30'); g.addColorStop(1, '#1f3864'); x.fillStyle = g; x.fillRect(X0, 0, HW, 84);
+    var b = x.createLinearGradient(X0, 0, X0 + HW, 0); b.addColorStop(0, '#C2268F'); b.addColorStop(0.5, '#7b3fa0'); b.addColorStop(1, '#1f8fd6'); x.fillStyle = b; x.fillRect(X0, 81, HW, 3);
+    caixa(XL, 16, 52, 52, 9, '#fff'); cabe(ino, XL + 4, 20, 44, 44);
+    txt('ORDEM DE PRODUÇÃO', XL + 64, 32, '#aab6d3', 600, 8, 'left', 2.2);
+    txt(info.op, XL + 63, 58, '#fff', 900, 24, 'left', -0.5);
+    txt('Orç. ' + o.num, XL + 64, 74, '#f3b6dc', 700, 9.5);
+    var cli = String(o.cliente || '').toUpperCase(), fs = 13; while (larg(cli, 800, fs) > 250 && fs > 8) fs--;
+    txt('CLIENTE', XR, 32, '#aab6d3', 600, 8, 'right', 2.2); txt(cli, XR, 52, '#fff', 800, fs, 'right'); txt('Entrega: ' + entrega, XR, 72, '#fff', 700, 10, 'right');
+    // posição + artigo
+    var y = 104, pn = String(p.nome).toUpperCase(), pw = larg(pn, 900, 18) + 30;
+    caixa(XL, y, pw, 34, 17, lado === 'C' ? '#9b1c72' : '#1f3864'); txt(pn, XL + 15, y + 24, '#fff', 900, 18, 'left', 0.5);
+    var nm = propNomes(l.produto, l.ref), X1 = XL + pw + 12;
+    txt(String(nm.t || l.ref).toUpperCase() + (nm.s ? ' · ' + nm.s : ''), X1, y + 14, '#14213D', 800, 12);
+    txt('Ref. ' + l.ref + ' · ' + corSemCodigo(l.cor || '') + ' · ' + l.qtd + ' peças', X1, y + 30, '#4a5570', 600, 10.5);
+    // campos a preencher
+    y = 152;
+    function campo(rot, X, Y, Wc) { txt(rot, X, Y + 20, '#14213D', 800, 12); var lw = larg(rot, 800, 12) + 8; caixa(X + lw, Y, Wc - lw, 30, 6, '#fff', '#8a93a8', 1.2); }
+    campo('Máquina:', XL, y, W * 0.5 - 6); campo('Data:', XL + W * 0.5 + 6, y, W * 0.5 - 6);
+    campo('Operadores:', XL, y + 38, W);
+    // desenho: posição na peça (esq.) + desenho grande (dir.)
+    y = 238; txt('DESENHO A ESTAMPAR', XL, y, '#8a93a8', 700, 8, 'left', 2.2); y += 8;
+    var hD = 262, wM = 170, mq = m.mq;
+    caixa(XL, y, wM, hD, 10, '#f3f5f9'); if (m.mock) cabe(m.mock, XL + 6, y + 6, wM - 12, hD - 30); else txt('sem maquete', XL + wM / 2, y + hD / 2, '#8a93a8', 600, 10, 'center');
+    txt('POSIÇÃO NA PEÇA', XL + wM / 2, y + hD - 9, '#4a5570', 700, 8, 'center', 1.5);
+    var xD = XL + wM + 10, wD = XR - xD, fundo = corParaHex(l.cor) || '#8a93a8';
+    caixa(xD, y, wD, hD, 10, fundo, '#c9cfdb'); cabe(m.des, xD + 16, y + 16, wD - 32, hD - 32);
+    if (!m.des) txt('Falta o desenho', xD + wD / 2, y + hD / 2, '#fff', 700, 12, 'center');
+    // medidas
+    y += hD + 20;
+    if (mq) {
+      var med = 'Largura ' + fmtCm(mq.wcm) + ' cm  ×  Altura ' + fmtCm(mq.hcm) + ' cm';
+      txt(med, XL, y, '#14213D', 900, 14);
+      var ex = []; if (mq.gola != null) ex.push('topo a ' + fmtCm(Math.max(0, mq.gola)) + ' cm da gola');
+      if (mq.meio != null) ex.push(Math.abs(mq.meio) < 0.6 ? 'centrado' : fmtCm(Math.abs(mq.meio)) + ' cm à ' + (mq.meio < 0 ? (lado === 'C' ? 'esquerda' : 'direita') + ' de quem veste' : (lado === 'C' ? 'direita' : 'esquerda') + ' de quem veste'));
+      if (mq.rot) ex.push('rodado ' + mq.rot + '°');
+      if (ex.length) txt(ex.join(' · '), XL, y + 17, '#4a5570', 600, 10.5);
+    } else txt('Sem maquete: confirmar medidas e posição antes de estampar.', XL, y, '#b45309', 700, 11);
+    // tamanhos
+    y = 568; txt('TAMANHOS — PREENCHER O QUE FOI ESTAMPADO', XL, y, '#8a93a8', 700, 8, 'left', 2.2); y += 8;
     var ped = {}; lerTam(l.tam).forEach(function (t) { ped[t.tam] = (ped[t.tam] || 0) + t.qtd; });
     var ts = (typeof tamanhosDe === 'function' ? tamanhosDe(l.ref) : []).map(function (t) { return String(t).toUpperCase(); });
     Object.keys(ped).forEach(function (t) { if (ts.indexOf(t) < 0) ts.push(t); }); if (!ts.length) ts = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL'];
-    var colL = 120, nC = ts.length + 1, cw2 = Math.min(70, (XR - M - colL) / nC), rowH = 34, linhasT = [['Pedido', true], ['Estampado', false], ['Com defeito', false]];
-    var tw = colL + cw2 * nC;
-    caixa(M, y, tw, rowH * (linhasT.length + 1), 10, null, '#c9cfdb');
-    x.fillStyle = '#14213D'; rr(x, M, y, tw, rowH, 10); x.fill(); x.fillRect(M, y + rowH / 2, tw, rowH / 2);
-    ts.concat(['TOTAL']).forEach(function (t, k) { txt(t, M + colL + cw2 * k + cw2 / 2, y + 22, '#fff', 800, 11, 'center'); });
-    linhasT.forEach(function (rw, ri) { var Y = y + rowH * (ri + 1); x.fillStyle = '#e1e5ee'; x.fillRect(M, Y, tw, 1); txt(rw[0], M + 12, Y + 22, '#14213D', 700, 11);
-      ts.forEach(function (t, k) { var X = M + colL + cw2 * k; x.fillStyle = '#e1e5ee'; x.fillRect(X, Y, 1, rowH); if (rw[1] && ped[t]) txt(String(ped[t]), X + cw2 / 2, Y + 22, '#14213D', 800, 13, 'center'); });
-      var XT = M + colL + cw2 * ts.length; x.fillStyle = '#e1e5ee'; x.fillRect(XT, Y, 1, rowH); if (rw[1]) txt(String(Object.keys(ped).length ? Object.keys(ped).reduce(function (s, k) { return s + ped[k]; }, 0) : l.qtd), XT + cw2 / 2, Y + 22, '#14213D', 900, 13, 'center'); });
-    x.fillStyle = '#e1e5ee'; x.fillRect(M + colL, y, 1, rowH * (linhasT.length + 1));
-    if (!Object.keys(ped).length) txt('Tamanhos ainda não indicados no orçamento — total: ' + l.qtd + ' peças.', M, y + rowH * 4 + 18, '#b45309', 700, 10);
-    // notas e verificação
-    y = 948; txt('NOTAS DA PRODUÇÃO', M, y, '#8a93a8', 700, 8.5, 'left', 2.4);
-    caixa(M, y + 8, XR - M, 64, 10, null, '#c9cfdb'); if (info.notas) { fnt(400, 10); linhas(x, info.notas, XR - M - 20).slice(0, 3).forEach(function (s, i) { txt(s, M + 10, y + 26 + i * 14, '#33405e', 400, 10); }); }
-    var cx = M; ['Material recebido', 'Conferido (cores/tamanhos)', 'Estampado', 'Controlo final', 'Embalado'].forEach(function (c) { caixa(cx, y + 86, 13, 13, 3, null, '#8a93a8'); txt(c, cx + 19, y + 97, '#33405e', 600, 9.5); cx += larg(c, 600, 9.5) + 38; });
-    x.fillStyle = '#e6e9f0'; x.fillRect(0, PH - 44, PW, 1);
-    txt('INOVASTAMP, Lda · ordem de produção interna', M, PH - 20, '#8a93a8', 400, 8.5); txt(info.op + ' · ' + o.num + ' · página ' + (ai + 1) + '/' + sel.length, XR, PH - 20, '#8a93a8', 400, 8.5, 'right');
-  });
+    var colL = 92, nC = ts.length + 1, cw = (W - colL) / nC, rowH = 27, linhasT = [['Pedido', true], ['Estampado', false], ['Com defeito', false]];
+    caixa(XL, y, W, rowH * 4, 8, null, '#c9cfdb');
+    x.fillStyle = '#14213D'; rr(x, XL, y, W, rowH, 8); x.fill(); x.fillRect(XL, y + rowH / 2, W, rowH / 2);
+    ts.concat(['TOTAL']).forEach(function (t, k) { txt(t, XL + colL + cw * k + cw / 2, y + 18, '#fff', 800, 10, 'center'); });
+    linhasT.forEach(function (rw, ri) { var Y = y + rowH * (ri + 1); x.fillStyle = '#e1e5ee'; x.fillRect(XL, Y, W, 1); txt(rw[0], XL + 8, Y + 18, '#14213D', 700, 10);
+      ts.forEach(function (t, k) { var X = XL + colL + cw * k; x.fillStyle = '#e1e5ee'; x.fillRect(X, Y, 1, rowH); if (rw[1] && ped[t]) txt(String(ped[t]), X + cw / 2, Y + 18, '#14213D', 800, 12, 'center'); });
+      var XT = XL + colL + cw * ts.length; x.fillStyle = '#e1e5ee'; x.fillRect(XT, Y, 1, rowH);
+      if (rw[1]) txt(String(Object.keys(ped).length ? Object.keys(ped).reduce(function (s, k) { return s + ped[k]; }, 0) : l.qtd), XT + cw / 2, Y + 18, '#14213D', 900, 12, 'center'); });
+    x.fillStyle = '#e1e5ee'; x.fillRect(XL + colL, y, 1, rowH * 4);
+    if (!Object.keys(ped).length) txt('Tamanhos ainda não indicados no orçamento.', XL, y + rowH * 4 + 13, '#b45309', 700, 9);
+    // observações
+    y = 702; txt('OBSERVAÇÕES', XL, y, '#8a93a8', 700, 8, 'left', 2.2);
+    caixa(XL, y + 6, W, 46, 6, null, '#c9cfdb'); if (info.notas) { fnt(400, 9.5); linhas(x, info.notas, W - 16).slice(0, 2).forEach(function (s, i) { txt(s, XL + 8, y + 22 + i * 13, '#33405e', 400, 9.5); }); }
+    txt(info.op + ' · ' + String(p.nome) + ' · página ' + pg + '/' + npag, XR, PH - 14, '#8a93a8', 400, 8, 'right');
+    txt('INOVASTAMP · ordem de produção interna', XL, PH - 14, '#8a93a8', 400, 8);
+  }
+  for (var i = 0; i < metades.length; i += 2) {
+    nova(); var pg = i / 2 + 1;
+    metade(metades[i], 0, pg);
+    if (metades[i + 1]) metade(metades[i + 1], HW, pg);
+    x.save(); x.strokeStyle = '#b9c0cc'; x.setLineDash([5, 5]); x.lineWidth = 1; x.beginPath(); x.moveTo(HW, 92); x.lineTo(HW, PH - 8); x.stroke(); x.restore();
+  }
   return pags;
 }
 function opAbrir() { var url = URL.createObjectURL(new Blob([OPPDF.a], { type: 'application/pdf' })), l = document.createElement('a'); l.href = url; l.download = OPPDF.nome; l.target = '_blank'; document.body.appendChild(l); l.click(); l.remove(); }
@@ -1988,7 +2100,7 @@ function maqueteDoOrc() {
   var vistos = {};
   MQ.orcLinhas = o.linhas.filter(function (l) { var k = l.ref + '|' + (l.cor || ''); if (!l.ref || vistos[k]) return false; vistos[k] = 1; return true; })
     .map(function (l) { return { produto: l.produto, ref: l.ref, cor: l.cor || '', pers: [l.pers1, l.pers2].filter(Boolean).join(' + ') }; });
-  MQ.posOrc = {}; MQ.orcI = -1; MQ.logoBase = null; MQ.L.F.orig = null; MQ.L.F.des = null; MQ.L.F.src = null;
+  MQ.posOrc = {}; MQ.orcI = -1; MQ.logoBase = null; MQ.L.F.orig = null; MQ.L.F.des = null; MQ.L.F.src = null; MQ.L.C.orig = null; MQ.L.C.des = null; MQ.L.C.src = null; MQ.fv = 'F';
   PROP.formato = 'proposta';
   if (!TAMS) call('apiTamanhos').then(function (t) { TAMS = t; if ($('mqCv')) irMaquete(); });
   var i0 = 0; MQ.orcLinhas.some(function (l, i) { if (l.pers) { i0 = i; return true; } });
@@ -2000,7 +2112,7 @@ function maqueteDoOrc() {
   });
 }
 var POS_K = ['x', 'y', 'wcm', 'rot', 'orig', 'des', 'src', 'nome', 'tipo'];
-function mqGuardarPos() { if (MQ.ref && MQ.posOrc) { var L = MQ.L.F, p = {}; POS_K.forEach(function (k) { p[k] = L[k]; }); MQ.posOrc[MQ.ref] = p; } }
+function mqGuardarPos() { if (MQ.ref && MQ.posOrc) { var L = MQ.L.F, p = {}; POS_K.forEach(function (k) { p[k] = L[k]; }); if (MQ.L.C.des) { p.C = {}; POS_K.forEach(function (k) { p.C[k] = MQ.L.C[k]; }); } MQ.posOrc[MQ.ref] = p; } }
 function mqPorPos(p) { var L = MQ.L.F; POS_K.forEach(function (k) { if (p[k] !== undefined) L[k] = p[k]; }); }
 // escolhe o logótipo que contrasta com a cor da peça (claro em peças escuras, escuro em peças claras)
 function mqTomLogos() { LOGOS.forEach(function (x) { if (x.tom) return; var im = new Image(); im.onload = function () { x.tom = claroOuEscuro(im); x.img = im; }; im.src = 'data:' + x.tipo + ';base64,' + x.b64; }); }
@@ -2015,19 +2127,21 @@ function mqArtigoOrc(i, primeira) {
   var l = MQ.orcLinhas[i]; if (!l) return;
   if (!primeira && $('ppT')) propGuardarCampos();
   mqGuardarPos();
-  MQ.orcI = i; MQ.modo = 'foto'; MQ.lab = l.produto; MQ.ref = l.ref; MQ.peca = null; MQ.pecaOrig = null; MQ.corOrc = l.cor; MQ.tecOrc = l.pers;
+  MQ.orcI = i; MQ.lab = l.produto; MQ.ref = l.ref; MQ.peca = null; MQ.pecaOrig = null; MQ.pecaC = null; MQ.fv = 'F'; MQ.corOrc = l.cor; MQ.tecOrc = l.pers; mqParaModelo(l);
   var p = MQ.posOrc[l.ref];
+  if (!p && mqTemCostas(l)) { var Lf = MQ.L.F; Lf.x = 0.64; Lf.y = 0.33; Lf.wcm = 9; Lf.rot = 0; }   // frente + costas: frente no peito, costas ao centro
+  mqCostasPara(l, p);
   if (p) mqPorPos(p);
   else if (!l.pers && MQ.logoBase) { var Lx = MQ.L.F; Lx.orig = null; Lx.des = null; Lx.src = null; }
   else { if (MQ.logoBase && !MQ.L.F.des) mqPorPos(MQ.logoBase); var li = mqLogoParaCor(l.cor); if (li >= 0 && LOGOS[li].nome !== MQ.L.F.nome) { MQ.lado = 'F'; mqUsarLogo(li); return; } }
   irMaquete();
 }
 function mqOrcCartao() {
-  if (!MQ.orcLinhas || !MQ.orcLinhas.length || MQ.modo !== 'foto') return '';
+  if (!MQ.orcLinhas || !MQ.orcLinhas.length) return '';
   return '<div class="card"><div class="row"><b class="sp">Artigos do orçamento ' + esc(MQ.orc || '') + '</b><span class="mut">' + MQ.orcLinhas.length + '</span></div>' +
     '<div class="chips">' + MQ.orcLinhas.map(function (l, i) {
       return '<button class="chip' + (i === MQ.orcI ? ' on' : '') + '" onclick="mqArtigoOrc(' + i + ')">' + esc(propNomes(l.produto, l.ref).t) + (l.cor ? ' · ' + esc(l.cor) : '') + (MQ.posOrc[l.ref] || i === MQ.orcI ? ' ✓' : '') + '</button>';
-    }).join('') + '</div><div class="mut">Toca em cada artigo e acerta a posição do logótipo. Depois envia tudo de uma vez — uma página por artigo, sem quantidades nem preços.</div>' +
+    }).join('') + '</div><div class="mut">1) Acerta o desenho e a posição no esboço (frente e costas) — é isto que vai para a produção. 2) Passa para "Foto do catálogo" para a apresentação ao cliente (as posições e os cm passam iguais). Toca em cada artigo e acerta a posição do logótipo. Depois envia tudo de uma vez — uma página por artigo, sem quantidades nem preços.</div>' +
     (MQ.orcLinhas.length > 1 ? '<div class="acts"><button class="btn wa" onclick="mqTodasWhats()">Enviar as ' + MQ.orcLinhas.length + ' propostas</button><button class="btn sec" onclick="mqTodasGuardar()">⬇ Descarregar as ' + MQ.orcLinhas.length + '</button></div><div id="mqTodasZona"></div>' : '') + '</div>';
 }
 // gera a proposta de cada artigo (com a posição acertada para cada um) e devolve os ficheiros
@@ -2035,17 +2149,19 @@ function mqTodas(cb) {
   if (!temDesenho()) { msg('Põe primeiro o logótipo do cliente.', true); return; }
   if ($('ppT')) propGuardarCampos();
   mqGuardarPos();
-  var antes = { i: MQ.orcI, peca: MQ.peca }, fs = [], i = 0, L = MQ.L.F, guard = {}; POS_K.forEach(function (k) { guard[k] = L[k]; });
+  var antes = { i: MQ.orcI, peca: MQ.peca, modo: MQ.modo, tpl: MQ.tpl, cor: MQ.cor, vista: MQ.vista }, fs = [], i = 0, L = MQ.L.F, guard = {}; POS_K.forEach(function (k) { guard[k] = L[k]; });
   aPreparar('mqTodasZona', 'A preparar as propostas… 0 de ' + MQ.orcLinhas.length);
   var prox = function () {
     if (i >= MQ.orcLinhas.length) {
       var l0 = MQ.orcLinhas[antes.i]; MQ.orcI = antes.i; MQ.lab = l0.produto; MQ.ref = l0.ref; MQ.corOrc = l0.cor; MQ.tecOrc = l0.pers; MQ.peca = antes.peca;
+      MQ.modo = antes.modo; MQ.tpl = antes.tpl; MQ.cor = antes.cor; MQ.vista = antes.vista;
       mqPorPos(guard); mqDesenhar(); cb(fs); return;
     }
     var l = MQ.orcLinhas[i];
-    MQ.lab = l.produto; MQ.ref = l.ref; MQ.corOrc = l.cor; MQ.tecOrc = l.pers; MQ.orcI = i;
+    MQ.lab = l.produto; MQ.ref = l.ref; MQ.corOrc = l.cor; MQ.tecOrc = l.pers; MQ.orcI = i; MQ.modo = 'foto'; MQ.fv = 'F'; MQ.pecaC = null;
     var p = MQ.posOrc[l.ref];
     if (p) mqPorPos(p); else if (!l.pers && MQ.logoBase) { mqPorPos(guard); L.orig = null; L.des = null; L.src = null; } else mqPorPos(MQ.logoBase ? Object.assign({}, guard, MQ.logoBase) : guard);
+    mqCostasPara(l, p);
     var gerar = function (im) {
       MQ.peca = im ? pintarPeca(im, l.ref, l.cor) : null;
       propGerar(function (c) { c.toBlob(function (b) { fs.push(new File([b], mqNome(), { type: 'image/png' })); i++; aPreparar('mqTodasZona', 'A preparar as propostas… ' + i + ' de ' + MQ.orcLinhas.length); prox(); }, 'image/png'); });
@@ -2238,20 +2354,21 @@ function logoCliente() {
 }
 function propPosicao(l) {
   var L = MQ.L[l]; if (!L.des) return '';
-  var p = MQ.modo === 'foto' ? (L.y < 0.45 && Math.abs(L.x - 0.5) > 0.06 ? 'no peito ' + (L.x > 0.5 ? 'esquerdo' : 'direito') : 'na frente') : (l === 'C' ? 'nas costas' : (Math.abs(L.x - 0.5) > 0.06 ? 'no peito ' + (L.x > 0.5 ? 'esquerdo' : 'direito') : 'na frente'));
+  var p = MQ.modo === 'foto' && l === 'F' ? (L.y < 0.45 && Math.abs(L.x - 0.5) > 0.06 ? 'no peito ' + (L.x > 0.5 ? 'esquerdo' : 'direito') : 'na frente') : (l === 'C' ? 'nas costas' : (Math.abs(L.x - 0.5) > 0.06 ? 'no peito ' + (L.x > 0.5 ? 'esquerdo' : 'direito') : 'na frente'));
   return p + ' · cerca de ' + fmtCm(L.wcm) + ' cm';
 }
 function marcaCli(c) { return String(c || '').replace(/,/g, ' ').replace(/\b(UNIPESSOAL|LDA|LIMITADA|LTDA|S\.?A|SA|SGPS|SOCIEDADE|UNIP)\b\.?/gi, '').replace(/\s+/g, ' ').trim() || c; }
 function propGerar(cb) {
   var d = propDados(), cli = (mqCliente() || 'Cliente').toUpperCase(), marca = marcaCli(cli), logoC = logoCliente();
-  var tec = d.tec, lados = (MQ.modo === 'foto' ? ['F'] : ['F', 'C']).filter(function (l) { return MQ.L[l].des; });
+  var tec = d.tec, lados = ['F', 'C'].filter(function (l) { return MQ.L[l].des; });
   var pers = lados.length ? 'Logótipo ' + marca + ' ' + lados.map(propPosicao).join(' e ') + ' · ' + tec : (MQ.orcLinhas && MQ.orcI >= 0 && !MQ.tecOrc ? 'Artigo sem personalização · completa o fardamento da equipa ' + marca : 'Pronto a personalizar com o logótipo ' + marca + ' · serigrafia ou DTF, no tamanho e posição que preferir');
   // maquete em alta resolução
   var t = mqTamanhoCv(), W0 = t.W, H0 = t.H, k = 1400 / W0, off = document.createElement('canvas'); off.width = Math.round(W0 * k); off.height = Math.round(H0 * k);
   var ox = off.getContext('2d'); ox.setTransform(k, 0, 0, k, 0, 0);
-  var vistaAntes = MQ.vista; if (MQ.modo !== 'foto' && MQ.L.C.des && MQ.L.F.des) MQ.vista = 'FC';
+  var vistaAntes = MQ.vista, fvAntes = MQ.fv; MQ.fv = 'F'; if (MQ.modo !== 'foto' && MQ.L.C.des && MQ.L.F.des) MQ.vista = 'FC';
   mqDesenharEm(ox, W0, H0, false, MQ.modo !== 'foto'); MQ.vista = vistaAntes;
-  var A = MQ._areas, zF, zDet;
+  var A = MQ._areas, zF, zDet; MQ.fv = fvAntes;
+  var costasC = MQ.modo === 'foto' && MQ.L.C.des && MQ.L.F.des ? mqImgLado('C', 700, 805) : null;
   mqDesenhar();
   if (MQ.modo === 'foto') {
     var pk = MQ.peca ? Math.min(W0 / MQ.peca.width, H0 / MQ.peca.height) : 1, pw = MQ.peca ? MQ.peca.width * pk : W0, ph = MQ.peca ? MQ.peca.height * pk : H0;
@@ -2315,9 +2432,10 @@ function propGerar(cb) {
     x.save(); x.shadowColor = 'rgba(0,0,0,.35)'; x.shadowBlur = 24; x.shadowOffsetY = 8; rr(x, X, y, dW, dH, 22); x.fillStyle = '#eef1f6'; x.fill(); x.restore();
     x.save(); rr(x, X, y, dW, dH, 22); x.clip();
     if (MQ.modo !== 'foto' && MQ.L.F.des && MQ.L.C.des) { x.fillStyle = '#eef1f6'; x.fillRect(X, y, dW, dH); var kd = Math.min((dW - 30) / zDet[2], (dH - 60) / zDet[3]); x.drawImage(off, zDet[0], zDet[1], zDet[2], zDet[3], X + (dW - zDet[2] * kd) / 2, y + 12, zDet[2] * kd, zDet[3] * kd); }
+    else if (costasC) { x.fillStyle = '#eef1f6'; x.fillRect(X, y, dW, dH); var kc = Math.min((dW - 20) / costasC.width, (dH - 56) / costasC.height); x.drawImage(costasC, X + (dW - costasC.width * kc) / 2, y + 8, costasC.width * kc, costasC.height * kc); }
     else cobrir(x, off, zDet[0], zDet[1], zDet[2], zDet[3], X, y, dW, dH);
     x.restore();
-    var lbD = MQ.modo !== 'foto' && MQ.L.F.des && MQ.L.C.des ? 'COSTAS' : (lados.length ? 'DETALHE DO LOGÓTIPO' : 'DETALHE'); x.font = '700 13px ' + F; esp(x, '2.5px'); var lbw = x.measureText(lbD).width;
+    var lbD = (MQ.modo !== 'foto' && MQ.L.F.des && MQ.L.C.des) || costasC ? 'COSTAS' : (lados.length ? 'DETALHE DO LOGÓTIPO' : 'DETALHE'); x.font = '700 13px ' + F; esp(x, '2.5px'); var lbw = x.measureText(lbD).width;
     x.fillStyle = '#C2268F'; rr(x, X + 14, y + dH - 46, lbw + 28, 32, 16); x.fill(); x.fillStyle = '#fff'; x.fillText(lbD, X + 28, y + dH - 25); esp(x, '0px');
     var fx = X + dW + 7 * mm, fw = XR - fx, fy = y + 6;
     var feats = String(d.feats || '').split('\n').map(function (s) { return s.trim(); }).filter(String);
