@@ -2127,11 +2127,11 @@ function opDesenhar(o, info, metades, ino) {
     var ap = info.maqAp || {}, okM = ap.estado === 'Aprovada', tA = okM ? '✓ MAQUETE APROVADA' + (ap.data ? ' · ' + String(ap.data).substring(0, 10) : '') : (ap.estado === 'Alterações pedidas' ? '✎ CLIENTE PEDIU ALTERAÇÕES' : '⚠ MAQUETE POR APROVAR'), wA = larg(tA, 800, 8.5) + 18;
     caixa(XR - wA, y - 12, wA, 17, 8.5, okM ? '#1f8a4c' : '#c2410c'); txt(tA, XR - wA / 2, y, '#fff', 800, 8.5, 'center', 0.6);
     y += 8;
-    var hD = 262, wM = 170, mq = m.mq;
+    var hD = 292, wM = 268, mq = m.mq;
     caixa(XL, y, wM, hD, 10, '#f3f5f9'); if (m.mock) cabe(m.mock, XL + 6, y + 6, wM - 12, hD - 30); else txt('sem maquete', XL + wM / 2, y + hD / 2, '#8a93a8', 600, 10, 'center');
-    txt('POSIÇÃO NA PEÇA', XL + wM / 2, y + hD - 9, '#4a5570', 700, 8, 'center', 1.5);
+    txt('MAQUETE · POSIÇÃO NA PEÇA', XL + wM / 2, y + hD - 9, '#4a5570', 700, 8, 'center', 1.5);
     var xD = XL + wM + 10, wD = XR - xD, fundo = corParaHex(l.cor) || '#8a93a8';
-    caixa(xD, y, wD, hD, 10, fundo, '#c9cfdb'); cabe(m.des, xD + 16, y + 16, wD - 32, hD - 32);
+    caixa(xD, y, wD, hD, 10, fundo, '#c9cfdb'); cabe(m.des, xD + 14, y + 14, wD - 28, hD - 42); txt('DESENHO', xD + wD / 2, y + hD - 9, '#ffffffaa', 700, 8, 'center', 1.5);
     if (!m.des) txt('Falta o desenho', xD + wD / 2, y + hD / 2, '#fff', 700, 12, 'center');
     // medidas
     y += hD + 20;
@@ -2146,11 +2146,11 @@ function opDesenhar(o, info, metades, ino) {
       if (ex.length) txt(ex.join(' · '), XL, y + 17, '#4a5570', 600, 10.5);
     } else txt('Sem maquete: confirmar medidas e posição antes de estampar.', XL, y, '#b45309', 700, 11);
     // tamanhos
-    y = 568; txt('TAMANHOS — PREENCHER O QUE FOI ESTAMPADO', XL, y, '#8a93a8', 700, 8, 'left', 2.2); y += 8;
+    y = 594; txt('TAMANHOS — PREENCHER O QUE FOI ESTAMPADO', XL, y, '#8a93a8', 700, 8, 'left', 2.2); y += 8;
     var ped = {}; lerTam(l.tam).forEach(function (t) { ped[t.tam] = (ped[t.tam] || 0) + t.qtd; });
     var ts = (typeof tamanhosDe === 'function' ? tamanhosDe(l.ref) : []).map(function (t) { return String(t).toUpperCase(); });
     Object.keys(ped).forEach(function (t) { if (ts.indexOf(t) < 0) ts.push(t); }); if (!ts.length) ts = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL'];
-    var colL = 92, nC = ts.length + 1, cw = (W - colL) / nC, rowH = 27, linhasT = [['Pedido', true], ['Estampado', false], ['Com defeito', false]];
+    var colL = 92, nC = ts.length + 1, cw = (W - colL) / nC, rowH = 25, linhasT = [['Pedido', true], ['Estampado', false], ['Com defeito', false]];
     caixa(XL, y, W, rowH * 4, 8, null, '#c9cfdb');
     x.fillStyle = '#14213D'; rr(x, XL, y, W, rowH, 8); x.fill(); x.fillRect(XL, y + rowH / 2, W, rowH / 2);
     ts.concat(['TOTAL']).forEach(function (t, k) { txt(t, XL + colL + cw * k + cw / 2, y + 18, '#fff', 800, 10, 'center'); });
@@ -2161,8 +2161,8 @@ function opDesenhar(o, info, metades, ino) {
     x.fillStyle = '#e1e5ee'; x.fillRect(XL + colL, y, 1, rowH * 4);
     if (!Object.keys(ped).length) txt('Tamanhos ainda não indicados no orçamento.', XL, y + rowH * 4 + 13, '#b45309', 700, 9);
     // observações
-    y = 702; txt('OBSERVAÇÕES', XL, y, '#8a93a8', 700, 8, 'left', 2.2);
-    caixa(XL, y + 6, W, 46, 6, null, '#c9cfdb'); if (info.notas) { fnt(400, 9.5); linhas(x, info.notas, W - 16).slice(0, 2).forEach(function (s, i) { txt(s, XL + 8, y + 22 + i * 13, '#33405e', 400, 9.5); }); }
+    y = 718; txt('OBSERVAÇÕES', XL, y, '#8a93a8', 700, 8, 'left', 2.2);
+    caixa(XL, y + 6, W, 40, 6, null, '#c9cfdb'); if (info.notas) { fnt(400, 9.5); linhas(x, info.notas, W - 16).slice(0, 2).forEach(function (s, i) { txt(s, XL + 8, y + 22 + i * 13, '#33405e', 400, 9.5); }); }
     txt(info.op + ' · ' + String(p.nome) + ' · página ' + pg + '/' + npag, XR, PH - 14, '#8a93a8', 400, 8, 'right');
     txt('INOVASTAMP · ordem de produção interna', XL, PH - 14, '#8a93a8', 400, 8);
   }
