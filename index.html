@@ -91,7 +91,7 @@
 <header><h1 id="titulo">Orçamentos</h1><button id="btnTopo" onclick="recarregar()">↻</button></header>
 <main id="main"></main>
 <nav>
-  <button id="n-lista" onclick="irLista()"><b>☰</b>Orçamentos</button>
+  <button id="n-lista" onclick="irHoje()"><b>⌂</b>Início</button>
   <button id="n-prod" onclick="irProducao()"><b>⚙</b>Produção</button>
   <button id="n-novo" onclick="novo()"><b>＋</b>Novo</button>
   <button id="n-cons" onclick="irConsulta()"><b>€</b>Consulta</button>
@@ -167,7 +167,7 @@ function iniciar() {
   call('apiInit').then(function (d) {
     D = d;
     if (ABRIR_OP) { var n = ABRIR_OP; ABRIR_OP = ''; try { history.replaceState(null, '', location.pathname); } catch (e) {} OP_FOCO = true; abrir(n); }
-    else irLista(true);
+    else irHoje();
   });
 }
 function js(v) { return esc(JSON.stringify(v)); }
@@ -274,11 +274,7 @@ function desenharDetalhe(o) {
     'Para alterar artigos: <b>Editar</b>, muda o que for preciso e guarda — o orçamento volta a "Enviado" e reenvias (o link de aceitação continua o mesmo). ' +
     'Se já criaste a encomenda ao fornecedor, ajusta-a na aba Encomenda.</div><div class="acts">' +
     '<button class="btn sec" onclick="anularAceite(' + n + ',\'Enviado\')">Anular aceitação</button><button class="btn sec" onclick="anularAceite(' + n + ',\'Recusado\')">Cliente desistiu</button></div></div>';
-  var forn = {};
-  o.linhas.forEach(function (l) { forn[fornDe(l.produto)] = true; });
-  h += '<h2>Encomenda ao fornecedor</h2><div class="card"><div class="mut">Passa os artigos deste orçamento para a aba Encomenda (separados por tamanho, se os tiveres indicado) e guarda-a como rascunho. ' +
-    'Revês e envias na folha (INOVASTAMP › Enviar encomenda).</div><div class="acts">' +
-    Object.keys(forn).map(function (f) { return '<button class="btn sec" onclick="criarEncomenda(' + n + ',\'' + f + '\')">Criar encomenda ' + f + '</button>'; }).join('') + '</div></div>';
+  h += '<h2>Encomenda ao fornecedor</h2><div class="card" id="encOrcZona"><div class="mut">A carregar…</div></div>';
   h += '<h2>Maquete e tamanhos da equipa</h2><div class="card"><div class="acts"><button class="btn sec" onclick="pedirAprovMaq()">Pedir aprovação da maquete</button>' +
     '<button class="btn sec" onclick="abrirRecolha()">Tamanhos da equipa (link)</button></div><div id="maqApZona"></div><div id="recZona"></div></div>';
   h += '<h2>Estado e faturação</h2><div class="card"><div class="g2"><div><label>Estado</label><select id="dEst">' +
@@ -290,6 +286,7 @@ function desenharDetalhe(o) {
     '<button class="btn sec" onclick="mensagem(\'pronto\')">Pronto p/ levantar</button><button class="btn sec" onclick="mensagem(\'pagar\')">Lembrar pagamento</button></div><div id="msgZona"></div></div>';
   $('main').innerHTML = h;
   if ($('prodZona')) carregarProd(o.num);
+  encOrcZona(o);
 }
 function guardarEstado(num) {
   call('apiEstado', num, $('dEst').value, $('dFat').value).then(function (r) {
@@ -666,10 +663,10 @@ function aplicarEscolha(num) {
   setTimeout(function () { msg('Ficaram só os artigos que o cliente escolheu. Confirma e carrega em "Guardar + PDF" — o orçamento continua Aceite.'); }, 1500);
 }
 function criarEncomenda(num, forn) {
-  if (!confirm('Criar a encomenda à ' + forn + ' com os artigos do orçamento ' + num + '?\nFica guardada como rascunho; envias depois na folha.')) return;
+  if (!confirm('Criar a encomenda à ' + forn + ' com os artigos do orçamento ' + num + '?\nAbre já na grelha de tamanhos para reveres e enviares.')) return;
   call('apiCriarEncomenda', num, forn).then(function (r) {
-    msg('Encomenda ' + r.num + ' (' + r.forn + ') guardada com ' + r.linhas + ' linha(s).' +
-      (r.semTam ? '\n' + r.semTam + ' artigo(s) sem tamanhos — completa na aba Encomenda.' : '') + '\nEnvia na folha: INOVASTAMP › Enviar encomenda.');
+    msg('Encomenda ' + r.num + ' (' + r.forn + ') criada com ' + r.linhas + ' linha(s).' + (r.semTam ? '\n' + r.semTam + ' artigo(s) sem tamanhos — preenche a grelha.' : ''));
+    ENCS = null; abrirEnc(r.num);
   });
 }
 
@@ -1008,7 +1005,8 @@ function fichaCliente(nome, nif) {
       return '<div class="lin row" onclick="abrir(\'' + esc(o.num) + '\')"><div class="sp"><div class="b">' + esc(o.num) + '</div><div class="mut">' + dt(o.data) + (o.fatura ? ' · Fat. ' + esc(o.fatura) : '') +
         '</div></div><div style="text-align:right"><div class="b num">' + eur(o.tC) + '</div><span class="tag t-' + esc(o.estado.replace(/\s/g, '')) + '">' + esc(o.estado || '—') + '</span></div></div>';
     }).join('') : '<div class="vazio">Sem orçamentos.</div>') + '</div>';
-    $('main').innerHTML = h;
+    h += '<h2>Logótipos</h2><div class="card" id="fLogos"><div class="mut">A carregar…</div></div>';
+    $('main').innerHTML = h; fichaLogos(c);
   });
 }
 function novoParaCliente() {
@@ -1904,7 +1902,7 @@ function dtfUsar(pv) {
 // ---------------- produção (quadro), por cobrar, ficha de produção, pagamentos, mensagens ----------------
 var PROD = null, PRODVER = 'quadro';
 function separadores(atual) {
-  return '<div class="chips">' + [['lista', 'Orçamentos', 'irLista()'], ['prod', 'Produção', 'irProducao()'], ['cobrar', 'Por cobrar', 'irCobrar()']].map(function (t) {
+  return '<div class="chips">' + [['hoje', 'Hoje', 'irHoje()'], ['lista', 'Orçamentos', 'irLista()'], ['prod', 'Produção', 'irProducao()'], ['cobrar', 'Por cobrar', 'irCobrar()']].map(function (t) {
     return '<button class="chip' + (t[0] === atual ? ' on' : '') + '" onclick="' + t[2] + '">' + t[1] + '</button>';
   }).join('') + '</div>';
 }
@@ -1918,7 +1916,7 @@ function infoEntrega(o) {
   return d < 0 ? '<span class="alerta">atrasado ' + (-d) + ' dia(s)</span>' : d === 0 ? '<span class="alerta">entrega hoje</span>' : 'entrega ' + dt(o.entrega) + (d <= 3 ? ' <span class="alerta">(' + d + ' d)</span>' : '');
 }
 function desenharProducao() {
-  var h = separadores('prod'), g = {};
+  var h = separadores('prod') + agendaEntregas(), g = {};
   PROD.lista.forEach(function (o) { (g[o.fase] = g[o.fase] || []).push(o); });
   PROD.fases.forEach(function (f) {
     var l = g[f] || []; if (f === 'Entregue') l = l.slice(-10).reverse();
@@ -1946,14 +1944,8 @@ function mudarFase(num, fase) {
     if (fase === 'Pronto') { PRONTO_MSG = true; OP_FOCO = true; abrir(num); } else irProducao();
   });
 }
+function CONCIR_OK(p) { if (CONCLUIR !== p.num) return false; if (p.fase === 'Pronto' || p.fase === 'Entregue') { CONCLUIR = ''; msg(p.num + ': já está ' + p.fase + '.'); return false; } return true; }
 function prodDe(num) { if (PR && PR.num === num) return PR; return (PROD && PROD.lista || []).filter(function (x) { return x.num === num; })[0] || {}; }
-function concluirProd(num) {
-  var p = prodDe(num);
-  if (!confirm('Dar a produção de ' + num + (p.cliente ? ' (' + p.cliente + ')' : '') + ' como CONCLUÍDA?\nPassa para "Pronto" e preparo a mensagem ao cliente.')) return;
-  call('apiProdGuardar', num, { fase: 'Pronto', entrega: p.entrega || '', notas: p.notas || '' }).then(function () {
-    msg(num + ': produção concluída ✓'); LISTA = []; PRONTO_MSG = true; OP_FOCO = true; abrir(num);
-  });
-}
 function entregarProd(num) {
   var p = prodDe(num), falta = Math.round(((p.tC || 0) - (p.pago || 0)) * 100) / 100;
   if (falta > 0.005 && !confirm('Ainda falta pagar ' + eur(falta) + '. Marcar ' + num + ' como entregue na mesma?')) return;
@@ -1975,15 +1967,16 @@ function carregarProd(num) { call('apiProdAbrir', num).then(function (p) { PR = 
 function desenharProd() {
   var p = PR, z = $('prodZona'); if (!z || !ATUAL || p.num !== ATUAL.num) return;
   var falta = Math.round((p.tC - p.pago) * 100) / 100;
-  var h = '<h2>Produção' + (p.op ? ' · ' + esc(p.op) : '') + '</h2><div class="card"><div class="chips" style="flex-wrap:wrap">' + p.fases.map(function (f) {
+  var cnc = CONCIR_OK(p);
+  var h = (cnc ? painelConcluir() : '') + '<h2>Produção' + (p.op ? ' · ' + esc(p.op) : '') + '</h2><div class="card"><div class="chips" style="flex-wrap:wrap">' + p.fases.map(function (f) {
       return '<button class="chip' + (f === p.fase ? ' on' : '') + '" onclick="faseRapida(' + js(f) + ')">' + esc(f) + '</button>'; }).join('') + '</div>' +
     '<div class="g2"><div><label>Fase</label><select id="pFase">' + opts(p.fases, p.fase) + '</select></div>' +
     '<div><label>Data de entrega</label><input id="pEnt" type="date" value="' + esc(p.entrega) + '"></div></div>' +
     '<label>Notas de produção (oficina)</label><textarea id="pNotas" rows="2" placeholder="ex.: logótipo frente 25 cm, costas nome + nº">' + esc(p.notas) + '</textarea>' +
-    (p.fase === 'Pronto' ? '<div class="ok-t" style="margin-top:8px">✓ Produção concluída — pronto a levantar' + (falta > 0.005 ? ' · falta pagar ' + eur(falta) : ' · pago') + '</div><div class="acts"><button class="btn wa" onclick="mensagem(\'pronto\',\'\',\'prontoMsg\')">Avisar o cliente</button><button class="btn sec" onclick="entregarProd(ATUAL.num)">Entregue ao cliente</button></div>'
+    (p.fase === 'Pronto' ? '<div class="ok-t" style="margin-top:8px">✓ Produção concluída — pronto a levantar' + (falta > 0.005 ? ' · falta pagar ' + eur(falta) : ' · pago') + '</div><div class="acts"><button class="btn wa" onclick="mensagem(\'pronto\',\'\',\'prontoMsg\')">Avisar o cliente</button><button class="btn sec" onclick="entregarProd(ATUAL.num)">Entregue ao cliente</button></div>' + (DEFEITOS && DEFEITOS.num === p.num ? '<div class="acts"><button class="btn sec" onclick="encReposicao()">🛒 Encomendar a reposição dos defeitos (' + DEFEITOS.linhas.reduce(function (a, d) { return a + d.qtd; }, 0) + ' pç)</button></div>' : '')
       : p.fase === 'Entregue' ? '<div class="ok-t" style="margin-top:8px">✓ Entregue ao cliente</div>'
       : '<div class="acts"><button class="btn ok" style="font-size:17px;padding:14px" onclick="concluirProd(ATUAL.num)">✓ Produção concluída</button></div>') + '<div id="prontoMsg"></div>' +
-    '<div class="acts"><button class="btn sec" onclick="guardarProd()">Guardar produção</button><button class="btn sec" onclick="fichaProducao()">Ordem de produção (PDF)</button></div>' +
+    '<div class="acts"><button class="btn sec" onclick="guardarProd()">Guardar produção</button><button class="btn sec" onclick="fichaProducao()">Ordem de produção (PDF)</button></div><div class="acts"><button class="btn lite" onclick="listaEmbalagem()">Lista de embalagem por pessoa (PDF)</button></div>' +
     infoMaqProd(p) + '<div id="opZona"></div></div>';
   h += '<h2>Pagamentos</h2><div class="card"><div class="tot"><span>Total c/ IVA</span><span class="num">' + eur(p.tC) + '</span></div>' +
     '<div class="tot"><span>Pago</span><span class="num">' + eur(p.pago) + '</span></div>' +
@@ -1998,8 +1991,9 @@ function desenharProd() {
     '<div class="acts"><button class="btn sec" onclick="registarPag()">Registar pagamento</button></div><div class="mut">Valor vazio = ' + (p.pago ? 'o que falta' : 'sinal de 50%') + '.</div></div>';
   $('prodZona').innerHTML = h;
   if (OP_FOCO) { OP_FOCO = false; setTimeout(function () { var z = $('prodZona'); if (z) z.scrollIntoView({ behavior: 'smooth' }); }, 150); }
+  if (cnc) setTimeout(function () { var z = $('cncZona'); if (z) z.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 200);
   if (PRONTO_MSG && p.fase === 'Pronto') { PRONTO_MSG = false; mensagem('pronto', '', 'prontoMsg'); }
-  if (FIM_OP) { FIM_OP = false; if (p.fase !== 'Pronto' && p.fase !== 'Entregue') setTimeout(function () { concluirProd(p.num); }, 400); else msg(p.num + ': já está ' + p.fase + '.'); }
+  if (FIM_OP) { FIM_OP = false; if (p.fase !== 'Pronto' && p.fase !== 'Entregue') { CONCLUIR = p.num; desenharProd(); return; } else msg(p.num + ': já está ' + p.fase + '.'); }
 }
 function guardarProd() {
   call('apiProdGuardar', ATUAL.num, { fase: $('pFase').value, entrega: $('pEnt').value, notas: $('pNotas').value }).then(function (r) {
@@ -2329,13 +2323,14 @@ function desenharEncs() {
   var h = '<div class="acts">' + fornecedores().map(function (f) { return '<button class="btn" onclick="novaEnc(' + js(f.nome) + ')">＋ ' + esc(f.nome) + '</button>'; }).join('') + '</div><div style="height:6px"></div>';
   h += ENCS.length ? ENCS.map(function (o) {
     return '<div class="card" onclick="abrirEnc(\'' + esc(o.num) + '\')"><div class="row"><div class="sp"><div class="b">' + esc(o.forn) + ' · ' + esc(o.num) + '</div><div class="mut">' + dt(o.data) + ' · ' + o.pecas + ' pç' +
-      (o.obs ? ' · ' + esc(o.obs) : '') + '</div></div><div style="text-align:right"><div class="b num">' + eur(o.total) + '</div><span class="tag ' + (o.estado === 'Enviada' ? 't-Aceite' : 't-Rascunho') + '">' +
-      esc(o.estado) + (o.envio ? ' ' + dt(o.envio) : '') + '</span></div></div></div>';
+      (o.obs ? ' · ' + esc(o.obs) : '') + '</div></div><div style="text-align:right"><div class="b num">' + eur(o.total) + '</div><span class="tag ' + (encEstado(o) === 'Rascunho' ? 't-Rascunho' : 't-Aceite') + '">' +
+      esc(encEstado(o)) + (o.envio && encEstado(o) === 'Enviada' ? ' ' + dt(o.envio) : '') + '</span></div></div></div>';
   }).join('') : '<div class="vazio">Sem encomendas.</div>';
   $('main').innerHTML = h;
 }
 function novaEnc(forn) { EN = { num: '', forn: forn, obs: '', data: D.hoje, estado: '', linhas: [] }; desenharEnc(); encAdicionar(); }
 function abrirEnc(num) {
+  if (!TAMS) { call('apiTamanhos').then(function (t) { TAMS = t; abrirEnc(num); }); return; }
   call('apiEncAbrir', num).then(function (o) {
     EN = { num: o.num, forn: o.forn, obs: o.obs, data: o.data, estado: o.estado, envio: o.envio, total: o.total, pdf: o.pdf, email: o.email,
            linhas: o.linhas.map(function (l) { return { produto: l.produto, ref: l.ref, cor: l.cor, tam: l.tam, qtd: l.qtd, nota: l.nota, preco: l.preco, total: l.total }; }) };
@@ -2346,8 +2341,11 @@ function tamanhosDe(ref) { if (!TAMS) return []; return TAMS[ref] || TAMS[base(r
 function desenharEnc() {
   navOn('n-enc'); $('titulo').textContent = EN.num ? EN.num : 'Nova encomenda';
   var n = EN.linhas.length, h = '<div class="card"><div class="g2"><div><label>Fornecedor</label><select onchange="EN.forn=this.value;desenharEnc()">' + opts(fornecedores().map(function (f) { return f.nome; }), EN.forn) + '</select></div>' +
-    '<div><label>Estado</label><div style="padding:9px 0">' + esc(EN.estado || 'Nova') + (EN.envio ? ' · enviada ' + dt(EN.envio) : '') + '</div></div></div>' +
+    '<div><label>Estado</label><div style="padding:9px 0">' + esc(EN.num ? encEstado(EN) : 'Nova') + (EN.envio ? ' · enviada ' + dt(EN.envio) : '') + '</div></div></div>' +
     '<label>Obs. (vai no email e no PDF)</label><input value="' + esc(EN.obs) + '" onchange="EN.obs=this.value" placeholder="ex.: Urgente / para o cliente X"></div>';
+  if (EN.num && encEstado(EN) === 'Enviada') h += '<div class="card" style="border-left:4px solid #1f8a4c"><div class="b">🚚 Chegou o material?</div><div class="mut">Confere a caixa com a lista abaixo. Se faltou alguma coisa, escreve o quê.</div>' +
+    '<input id="encFalta" placeholder="ex.: faltou 1 L vermelho (vem na próxima semana)" style="margin-top:6px"><div class="acts"><button class="btn ok" onclick="encReceber()">✓ Material recebido</button></div>' +
+    (orcsDaObs(EN.obs).length ? '<div class="mut">Depois pergunto se o ' + orcsDaObs(EN.obs).join(', ') + ' passa para "Em produção".</div>' : '') + '</div>';
   var G = encGrupos(), pecas = EN.linhas.reduce(function (a, l) { return a + (Number(l.qtd) || 0); }, 0);
   h += '<h2>Artigos (' + G.length + (pecas ? ' · ' + pecas + ' peças' : '') + ')</h2>' + (G.length ? G.map(function (g, gi) {
     var l = EN.linhas[g.idx[0]], cores = coresDe(l.ref), tams = encTamsGrupo(g);
@@ -2432,12 +2430,15 @@ function encGuardar(enviar) {
   if (semTam && !confirm(semTam + ' linha(s) sem cor ou sem tamanho. Continuar?')) return;
   if (enviar && !confirm((EN.estado === 'Enviada' ? 'Esta encomenda já foi enviada. Enviar outra vez?\n\n' : '') + 'Enviar a encomenda à ' + EN.forn + ' por email (com o PDF)?')) return;
   if (!enviar && EN.estado === 'Enviada' && !confirm('Esta encomenda já foi enviada ao fornecedor. Guardar as alterações por cima?')) return;
+  var obsAntes = EN.obs;
   call('apiEncGuardar', { num: EN.num, forn: EN.forn, obs: EN.obs, data: EN.data, linhas: ls.map(function (l) { return { produto: l.produto, cor: l.cor, tam: l.tam, qtd: Number(l.qtd), nota: l.nota || '' }; }) }, !!enviar)
-    .then(function (r) { msg('Encomenda ' + r.num + ' guardada (' + r.linhas + ' linhas, ' + eur(r.total) + ' s/IVA)' + (r.enviada ? '\nEnviada para ' + r.email : '')); abrirEnc(r.num); });
+    .then(function (r) { msg('Encomenda ' + r.num + ' guardada (' + r.linhas + ' linhas, ' + eur(r.total) + ' s/IVA)' + (r.enviada ? '\nEnviada para ' + r.email : '')); ENCS = null;
+      if (r.enviada) encAvancarOrcs(obsAntes, ['A encomendar'], 'À espera de material', false); abrirEnc(r.num); });
 }
 function encMarcar() {
   if (!confirm('Marcar a encomenda ' + EN.num + ' como feita no site (Enviada, hoje)?')) return;
-  call('apiEncMarcarEnviada', EN.num).then(function () { msg('Encomenda ' + EN.num + ' marcada como Enviada.'); abrirEnc(EN.num); });
+  var obsAntes = EN.obs, numE = EN.num;
+  call('apiEncMarcarEnviada', numE).then(function () { msg('Encomenda ' + numE + ' marcada como Enviada.'); ENCS = null; encAvancarOrcs(obsAntes, ['A encomendar'], 'À espera de material', false); abrirEnc(numE); });
 }
 function encPdf(num) {
   call('apiEncPdf', num).then(function (r) {
@@ -2710,7 +2711,7 @@ function desenharRecolha() {
     return '<div class="lin row"><div class="sp"><div class="b">' + esc(n) + '</div><div class="mut">' + it.map(function (x) { return x.art + '. ' + esc(x.tam) + (x.qtd > 1 ? ' ×' + x.qtd : ''); }).join(' · ') +
       (nota ? ' · ' + esc(nota) : '') + ' · ' + esc(it[0].data) + '</div></div><button class="x" onclick="apagarResposta(' + js(n) + ')">✕</button></div>';
   }).join('') + '</details>' +
-    '<div class="acts"><button class="btn ok" onclick="passarTamanhos()">Passar os tamanhos para o orçamento</button></div>' +
+    '<div class="acts"><button class="btn ok" onclick="passarTamanhos()">Passar os tamanhos para o orçamento</button></div><div class="acts"><button class="btn sec" onclick="listaEmbalagem()">Lista de embalagem por pessoa (PDF)</button></div>' +
     '<div class="mut">Abre o orçamento em edição com os tamanhos (e a quantidade, se mudou). Revês, carregas em Calcular e guardas. A lista por pessoa vai na ficha de produção.</div>';
   $('recZona').innerHTML = h;
 }
@@ -3167,6 +3168,235 @@ function itensStock() {
       ' · comprado ' + s.comp + ' · vendido ' + s.vend + '</div></div><div class="b num ' + (s.stock > 0 ? 'stk' : 'mut') + '" style="font-size:16px">' + s.stock + '</div></div></div>';
   });
   $('sItens').innerHTML = l.length ? h + '</div>' : '<div class="vazio">Sem stock registado. As compras lançam-se na aba Proformas.</div>';
+}
+
+// ================= v58 (18/11/2026): o dia a dia — ecrã Hoje, pesquisa única, agenda, encomenda num toque, receção, conclusão com números, lista de embalagem =================
+var HBUSCA = '', CONCLUIR = '', DEFEITOS = null;
+function faltaDe(o) { return Math.round(((Number(o.tC) || 0) - (Number(o.pago) || 0)) * 100) / 100; }
+function encsDoOrc(num) { return (ENCS || []).filter(function (e) { return String(e.obs || '').indexOf(num) >= 0; }); }
+function encRecebida(e) { return e.estado === 'Recebida' || /Recebida \d\d\/\d\d\/\d{4}/.test(e.obs || ''); }
+function encEstado(e) { return encRecebida(e) ? 'Recebida' : (e.estado || 'Rascunho'); }
+function orcsDaObs(obs) { var m = String(obs || '').match(/ORC-\d{4}-\d{4}/g) || [], v = {}; return m.filter(function (n) { if (v[n]) return false; v[n] = 1; return true; }); }
+function hLin(onc, tit, sub, dir) {
+  return '<div class="lin row" onclick="' + onc + '"><div class="sp"><div class="b">' + tit + '</div><div class="mut">' + sub + '</div></div>' + (dir ? '<div style="text-align:right;margin-left:8px">' + dir + '</div>' : '') + '</div>';
+}
+function jsA(s) { return esc(JSON.stringify(String(s))); }
+
+// ---------- ecrã Hoje ----------
+function irHoje() {
+  navOn('n-lista'); $('titulo').textContent = 'Hoje';
+  $('main').innerHTML = separadores('hoje') + '<div class="card mut" style="text-align:center">A preparar o dia…</div>';
+  Promise.all([call('apiLista'), call('apiProducao'), semFalha(call('apiEncLista'))]).then(function (r) {
+    LISTA = r[0] || []; PROD = r[1]; ENCS = r[2] || []; desenharHoje();
+  });
+}
+function desenharHoje() {
+  $('main').innerHTML = separadores('hoje') +
+    '<input id="hBusca" placeholder="Procurar cliente, NIF, nº de orçamento, OP, encomenda ou referência…" value="' + esc(HBUSCA) + '" oninput="HBUSCA=this.value;hojeBusca()">' +
+    '<div id="hRes"></div><div id="hCorpo"></div>';
+  hojeBusca(); hojeCorpo();
+}
+function hojeBusca() {
+  var z = $('hRes'); if (!z) return;
+  var q = norm(HBUSCA).trim(); if (q.length < 2) { z.innerHTML = ''; if ($('hCorpo')) $('hCorpo').style.display = ''; return; }
+  var r = [];
+  LISTA.filter(function (o) { return norm(o.cliente + ' ' + o.num + ' ' + (o.fatura || '')).indexOf(q) >= 0; }).slice(0, 8).forEach(function (o) {
+    r.push(hLin('abrir(' + jsA(o.num) + ')', esc(o.cliente || '—'), 'Orçamento ' + esc(o.num) + ' · ' + dt(o.data) + (o.fatura ? ' · Fat. ' + esc(o.fatura) : ''), '<div class="b num">' + eur(o.tC) + '</div><span class="tag t-' + esc(String(o.estado).replace(/\s/g, '')) + '">' + esc(o.estado) + '</span>'));
+  });
+  (PROD && PROD.lista || []).filter(function (o) { return o.op && norm(o.op).indexOf(q) >= 0; }).slice(0, 5).forEach(function (o) {
+    r.push(hLin('OP_FOCO=true;abrir(' + jsA(o.num) + ')', esc(o.op) + ' · ' + esc(o.cliente), 'Ordem de produção · ' + esc(o.num) + ' · ' + esc(o.fase), ''));
+  });
+  D.clientes.filter(function (c) { return norm(c[0] + ' ' + c[1]).indexOf(q) >= 0; }).slice(0, 6).forEach(function (c) {
+    r.push(hLin('fichaClienteK(' + D.clientes.indexOf(c) + ')', esc(c[0]), 'Cliente' + (c[1] ? ' · NIF ' + esc(c[1]) : ''), '›'));
+  });
+  (ENCS || []).filter(function (e) { return norm(e.num + ' ' + e.forn + ' ' + (e.obs || '')).indexOf(q) >= 0; }).slice(0, 5).forEach(function (e) {
+    r.push(hLin('abrirEnc(' + jsA(e.num) + ')', esc(e.forn) + ' · ' + esc(e.num), 'Encomenda · ' + esc(encEstado(e)) + ' · ' + e.pecas + ' pç', ''));
+  });
+  var np = 0;
+  D.produtos.forEach(function (p, k) { if (np >= 6 || !p[1] || norm(p[0] + ' ' + p[1]).indexOf(q) < 0) return; np++;
+    r.push('<div class="lin row" onclick="hojeProduto(' + k + ')">' + foto(p[1]) + '<div class="sp"><div class="b">' + esc(limpaProd(p[0])) + '</div><div class="mut">Artigo · ver preço</div></div></div>'); });
+  z.innerHTML = r.length ? '<div class="card">' + r.join('') + '</div>' : '<div class="mut" style="margin:6px 2px">Nada encontrado.</div>';
+  if ($('hCorpo')) $('hCorpo').style.display = 'none';
+}
+function hojeProduto(k) { var p = D.produtos[k]; CONS.lab = limpaProd(p[0]); CONS.ref = p[1]; CONS.r = null; irConsulta(); try { consultar(); } catch (e) {} }
+function hojeCorpo() {
+  var P = (PROD && PROD.lista) || [], h = '', n = 0;
+  function sec(tit, linhas, cor, extra) { if (!linhas.length) return ''; n += linhas.length; return '<h2>' + tit + ' (' + linhas.length + ')</h2><div class="card"' + (cor ? ' style="border-left:4px solid ' + cor + '"' : '') + '>' + linhas.join('') + (extra || '') + '</div>'; }
+  var ativos = P.filter(function (o) { return o.fase !== 'Entregue'; });
+  var urg = ativos.filter(function (o) { return o.fase !== 'Pronto' && o.entrega && diasPara(o.entrega) <= 3; }).sort(function (a, b) { return a.entrega < b.entrega ? -1 : 1; });
+  h += sec('⏰ Entregas a chegar', urg.map(function (o) { return hLin('OP_FOCO=true;abrir(' + jsA(o.num) + ')', esc(o.cliente), esc(o.num) + ' · ' + esc(o.fase) + ' · ' + infoEntrega(o), o.qtd + ' pç'); }), '#c2410c');
+  var emp = P.filter(function (o) { return o.fase === 'Em produção'; });
+  h += sec('⚙ Em produção', emp.map(function (o) { return hLin('OP_FOCO=true;abrir(' + jsA(o.num) + ')', esc(o.cliente), esc(o.num) + (o.op ? ' · ' + esc(o.op) : '') + ' · ' + o.qtd + ' pç · ' + infoEntrega(o),
+    '<button class="btn ok" style="width:auto;padding:7px 10px" onclick="event.stopPropagation();concluirProd(' + jsA(o.num) + ')">✓ Concluída</button>'); }));
+  var pr = P.filter(function (o) { return o.fase === 'Pronto'; });
+  h += sec('📦 Prontos para levantar', pr.map(function (o) { var f = faltaDe(o); return hLin('OP_FOCO=true;abrir(' + jsA(o.num) + ')', esc(o.cliente), esc(o.num) + ' · ' + o.qtd + ' pç', f > 0.005 ? '<span class="alerta">falta ' + eur(f) + '</span>' : '<span class="ok-t">pago</span>'); }), '#1f8a4c');
+  var mq = ativos.filter(function (o) { return o.maq && o.maq !== 'Aprovada'; });
+  h += sec('✎ Maquetes por aprovar', mq.map(function (o) { return hLin('abrir(' + jsA(o.num) + ')', esc(o.cliente), esc(o.num) + ' · ' + (o.maq === 'Alterações pedidas' ? '<span class="alerta">pediu alterações</span>' : esc(o.maq)), '›'); }));
+  var sem = P.filter(function (o) { return o.fase === 'A encomendar' && !encsDoOrc(o.num).length; });
+  h += sec('🛒 Por encomendar ao fornecedor', sem.map(function (o) { return hLin('abrir(' + jsA(o.num) + ')', esc(o.cliente), esc(o.num) + ' · ' + o.qtd + ' pç · aceite, sem encomenda', '›'); }), '#7b3fa0');
+  var rasc = (ENCS || []).filter(function (e) { return encEstado(e) === 'Rascunho'; });
+  h += sec('📝 Encomendas por enviar', rasc.map(function (e) { return hLin('abrirEnc(' + jsA(e.num) + ')', esc(e.forn) + ' · ' + esc(e.num), (e.obs ? esc(e.obs) + ' · ' : '') + e.pecas + ' pç', '›'); }));
+  var cam = (ENCS || []).filter(function (e) { return encEstado(e) === 'Enviada'; });
+  h += sec('🚚 Material a caminho', cam.map(function (e) { return hLin('abrirEnc(' + jsA(e.num) + ')', esc(e.forn) + ' · ' + esc(e.num), 'enviada ' + (e.envio ? dt(e.envio) + ' (há ' + diasDesde(e.envio) + ')' : '') + ' · ' + e.pecas + ' pç' + (e.obs ? ' · ' + esc(e.obs) : ''),
+    '<button class="btn sec" style="width:auto;padding:7px 10px" onclick="event.stopPropagation();abrirEnc(' + jsA(e.num) + ')">Chegou?</button>'); }));
+  var env = LISTA.filter(function (o) { return o.estado === 'Enviado'; }).sort(function (a, b) { return a.data < b.data ? -1 : 1; });
+  h += sec('✉ Orçamentos à espera de resposta', env.map(function (o) { return hLin('abrir(' + jsA(o.num) + ')', esc(o.cliente || '—'), esc(o.num) + ' · ' + dt(o.data) + ' (há ' + diasDesde(o.data) + ')', '<span class="b num">' + eur(o.tC) + '</span>'); }));
+  var cob = P.filter(function (o) { return faltaDe(o) > 0.005 && (o.fase === 'Pronto' || o.fase === 'Entregue' || o.estado === 'Faturado'); }), tc = cob.reduce(function (a, o) { return a + faltaDe(o); }, 0);
+  h += sec('€ Por cobrar (prontos e entregues)', cob.map(function (o) { return hLin('OP_FOCO=true;abrir(' + jsA(o.num) + ')', esc(o.cliente), esc(o.num) + ' · ' + esc(o.fase), '<span class="b num">' + eur(faltaDe(o)) + '</span>'); }), '#b45309',
+    '<div class="tot big"><span>Total</span><span class="num">' + eur(tc) + '</span></div>');
+  var rs = LISTA.filter(function (o) { return o.estado === 'Rascunho'; }).length;
+  if (!n) h = '<div class="vazio">Tudo em dia. 👍</div>';
+  if (rs) h += '<div class="mut" style="margin:10px 2px" onclick="FILTRO=\'Rascunho\';irLista()">' + rs + ' orçamento(s) em rascunho ›</div>';
+  $('hCorpo').innerHTML = h;
+}
+
+// ---------- agenda de entregas (no topo da Produção) ----------
+function agendaEntregas() {
+  var P = PROD.lista.filter(function (o) { return o.fase !== 'Entregue' && o.entrega && diasPara(o.entrega) <= 14; }).sort(function (a, b) { return a.entrega < b.entrega ? -1 : 1; });
+  var semData = PROD.lista.filter(function (o) { return o.fase !== 'Entregue' && !o.entrega; }).length;
+  if (!P.length && !semData) return '';
+  var dias = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'], g = {}, ord = [];
+  P.forEach(function (o) { var k = diasPara(o.entrega) < 0 ? 'atraso' : o.entrega; if (!g[k]) { g[k] = []; ord.push(k); } g[k].push(o); });
+  var h = '<details open><summary class="b" style="margin:10px 2px">📅 Agenda de entregas — próximos 14 dias</summary><div class="card">';
+  ord.forEach(function (k) {
+    var l = g[k], pc = l.reduce(function (a, o) { return a + (Number(o.qtd) || 0); }, 0), d = k === 'atraso' ? null : new Date(k + 'T00:00:00');
+    h += '<div style="margin:6px 0 2px;font-weight:800;color:' + (k === 'atraso' ? '#b3261e' : '#14213D') + '">' + (k === 'atraso' ? 'Atrasados' : dias[d.getDay()] + ' ' + dt(k) + (diasPara(k) === 0 ? ' · hoje' : '')) + ' <span class="mut">· ' + pc + ' pç</span></div>' +
+      l.map(function (o) { return hLin('OP_FOCO=true;abrir(' + jsA(o.num) + ')', esc(o.cliente), esc(o.num) + ' · ' + esc(o.fase), o.qtd + ' pç'); }).join('');
+  });
+  if (semData) h += '<div class="mut" style="margin-top:6px">' + semData + ' trabalho(s) sem data de entrega.</div>';
+  return h + '</div></details>';
+}
+
+// ---------- concluir a produção com números (botão ou QR) ----------
+function concluirProd(num) {
+  CONCLUIR = num; OP_FOCO = true;
+  if (ATUAL && ATUAL.num === num && $('prodZona')) carregarProd(num); else abrir(num);
+}
+function painelConcluir() {
+  var o = ATUAL, arts = o.linhas.map(function (l, i) { return { l: l, i: i }; }).filter(function (a) { return opTemPers(a.l.pers1) || opTemPers(a.l.pers2); });
+  if (!arts.length) arts = o.linhas.map(function (l, i) { return { l: l, i: i }; });
+  var h = '<div class="card" id="cncZona" style="border:2px solid #1f8a4c"><div class="b" style="font-size:16px">✓ Concluir produção</div><div class="mut">Confirma o que foi estampado em cada tamanho. Se houve peças com defeito, escreve quantas — ficam registadas e podes encomendar a reposição.</div>';
+  arts.forEach(function (a) {
+    var ped = {}; lerTam(a.l.tam).forEach(function (t) { ped[t.tam] = (ped[t.tam] || 0) + t.qtd; }); var ts = Object.keys(ped); if (!ts.length) { ts = ['Total']; ped = { Total: Number(a.l.qtd) || 0 }; }
+    var cel = 'style="text-align:center;padding:6px 2px;min-width:44px"';
+    h += '<div style="margin-top:12px"><div class="b">' + esc(nomeCurto(a.l.produto)) + ' · ' + esc(a.l.cor || '') + '</div><div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:13px;margin-top:4px"><tr><td></td>' +
+      ts.map(function (t) { return '<th style="padding:2px 4px">' + esc(t) + '</th>'; }).join('') + '</tr><tr><td class="mut" style="padding-right:6px">Pedido</td>' + ts.map(function (t) { return '<td style="text-align:center"><b>' + ped[t] + '</b></td>'; }).join('') + '</tr>' +
+      '<tr><td class="mut" style="padding-right:6px">Estampado</td>' + ts.map(function (t) { return '<td><input type="number" min="0" inputmode="numeric" class="cncE" data-i="' + a.i + '" data-t="' + esc(t) + '" value="' + ped[t] + '" ' + cel + '></td>'; }).join('') + '</tr>' +
+      '<tr><td class="mut" style="padding-right:6px">Defeito</td>' + ts.map(function (t) { return '<td><input type="number" min="0" inputmode="numeric" class="cncD" data-i="' + a.i + '" data-t="' + esc(t) + '" placeholder="0" ' + cel + '></td>'; }).join('') + '</tr></table></div></div>';
+  });
+  return h + '<div class="acts"><button class="btn ok" style="font-size:17px;padding:14px" onclick="confirmarConclusao()">✓ Confirmar produção concluída</button></div><div class="acts"><button class="btn lite" onclick="CONCLUIR=\'\';desenharProd()">Cancelar</button></div></div>';
+}
+function confirmarConclusao() {
+  var o = ATUAL, p = PR, por = {}, defs = [];
+  [].forEach.call(document.querySelectorAll('.cncE'), function (x) { var i = x.getAttribute('data-i'); (por[i] = por[i] || { e: [], d: [] }).e.push(x.getAttribute('data-t') + ' ' + (Number(x.value) || 0)); });
+  [].forEach.call(document.querySelectorAll('.cncD'), function (x) {
+    var n = Math.round(Number(x.value) || 0); if (!(n > 0)) return; var i = x.getAttribute('data-i'), t = x.getAttribute('data-t'), l = o.linhas[i];
+    (por[i] = por[i] || { e: [], d: [] }).d.push(t + ' ' + n); defs.push({ produto: l.produto, ref: l.ref, cor: l.cor || '', tam: t === 'Total' ? '' : t, qtd: n, nota: 'Reposição · ' + o.num });
+  });
+  var hoje = new Date(), dd = ('0' + hoje.getDate()).slice(-2) + '/' + ('0' + (hoje.getMonth() + 1)).slice(-2);
+  var nota = 'Concluído ' + dd + ': ' + Object.keys(por).map(function (i) { var l = o.linhas[i]; return nomeCurto(l.produto) + ' — estampado ' + por[i].e.join(', ') + (por[i].d.length ? ' · defeito ' + por[i].d.join(', ') : ''); }).join(' | ');
+  call('apiProdGuardar', o.num, { fase: 'Pronto', entrega: p.entrega || '', notas: ((p.notas || '') + '\n' + nota).trim() }).then(function () {
+    CONCLUIR = ''; PRONTO_MSG = true; DEFEITOS = defs.length ? { num: o.num, cliente: o.cliente, linhas: defs } : null; LISTA = [];
+    msg(o.num + ': produção concluída ✓' + (defs.length ? ' · ' + defs.reduce(function (a, d) { return a + d.qtd; }, 0) + ' peça(s) com defeito registadas' : '')); carregarProd(o.num);
+  });
+}
+function encReposicao() {
+  var D0 = DEFEITOS; if (!D0) return;
+  var forn = fornDe(D0.linhas[0].produto), ls = D0.linhas.filter(function (l) { return fornDe(l.produto) === forn; });
+  EN = { num: '', forn: forn, obs: 'Reposição de defeitos — ' + D0.num + ' — ' + D0.cliente, data: D.hoje, estado: '', linhas: ls.map(function (l) { return { produto: l.produto, ref: l.ref, cor: l.cor, tam: l.tam, qtd: l.qtd, nota: l.nota }; }) };
+  if (ls.length < D0.linhas.length) msg('Há peças de mais de um fornecedor — esta encomenda é só da ' + forn + '.');
+  DEFEITOS = null; desenharEnc();
+}
+
+// ---------- encomenda ao fornecedor a partir do orçamento ----------
+function encOrcZona(o) {
+  var z = $('encOrcZona'); if (!z) return;
+  var pE = ENCS ? Promise.resolve(ENCS) : semFalha(call('apiEncLista')), pS = STOCK ? Promise.resolve(STOCK) : semFalha(call('apiStock'));
+  Promise.all([pE, pS]).then(function (r) {
+    ENCS = r[0] || ENCS || []; STOCK = r[1] || STOCK; if (!ATUAL || ATUAL.num !== o.num || !$('encOrcZona')) return;
+    var es = encsDoOrc(o.num), forn = {}, h = '';
+    o.linhas.forEach(function (l) { forn[fornDe(l.produto)] = true; });
+    if (es.length) h += es.map(function (e) { var st = encEstado(e);
+      return '<div class="lin row" onclick="abrirEnc(' + jsA(e.num) + ')"><div class="sp"><div class="b">' + esc(e.forn) + ' · ' + esc(e.num) + '</div><div class="mut">' + e.pecas + ' pç' + (e.envio ? ' · enviada ' + dt(e.envio) : '') + '</div></div><span class="tag ' + (st === 'Rascunho' ? 't-Rascunho' : 't-Aceite') + '">' + esc(st) + '</span></div>'; }).join('');
+    var stk = [];
+    (STOCK || []).length && o.linhas.forEach(function (l) {
+      if (!l.cor) return; var cod = (String(l.cor).match(/^\d+/) || [''])[0];
+      var s = STOCK.filter(function (x) { return base(x.ref) === base(l.ref) && (cod ? (String(x.cor).match(/^\d+/) || [''])[0] === cod : norm(x.cor) === norm(l.cor)); }).reduce(function (a, x) { return a + (Number(x.stock) || 0); }, 0);
+      if (s > 0) stk.push(esc(nomeCurto(l.produto)) + ' ' + esc(corSemCodigo(l.cor)) + ': <b>' + s + '</b> em stock (o orçamento pede ' + l.qtd + ')');
+    });
+    if (stk.length) h += '<div class="ok-t" style="margin-top:6px">★ ' + stk.join('<br>★ ') + '</div><div class="mut">Confere os tamanhos em stock antes de enviar — tira da encomenda o que já tens.</div>';
+    h += '<div class="acts">' + Object.keys(forn).map(function (f) { return '<button class="btn' + (es.some(function (e) { return e.forn === f; }) ? ' sec' : '') + '" onclick="criarEncomenda(' + jsA(o.num) + ',' + jsA(f) + ')">' + (es.some(function (e) { return e.forn === f; }) ? 'Nova encomenda ' : 'Encomendar à ') + esc(f) + '</button>'; }).join('') + '</div>' +
+      '<div class="mut">Cria a encomenda com os tamanhos deste orçamento e abre-a já na grelha para reveres e enviares.</div>';
+    $('encOrcZona').innerHTML = h;
+  });
+}
+// muda a fase da produção dos orçamentos ligados a uma encomenda
+function encAvancarOrcs(obs, de, para, perguntar) {
+  orcsDaObs(obs).reduce(function (pr, num) { return pr.then(function () {
+    return semFalha(call('apiProdAbrir', num)).then(function (p) {
+      if (!p || de.indexOf(p.fase) < 0) return;
+      if (perguntar && !confirm('O material do ' + num + (p.cliente ? ' (' + p.cliente + ')' : '') + ' chegou.\nPassar a produção para "' + para + '"?')) return;
+      return call('apiProdGuardar', num, { fase: para, entrega: p.entrega || '', notas: p.notas || '' }).then(function () { msg(num + ': ' + para); });
+    });
+  }); }, Promise.resolve()).then(function () { LISTA = []; PROD = null; });
+}
+function encReceber() {
+  var falta = ($('encFalta') && $('encFalta').value || '').trim(), num = EN.num, obs = EN.obs;
+  if (!confirm('Confirmar que o material da ' + EN.forn + ' (' + num + ') chegou' + (falta ? ', com a falta indicada' : ' completo') + '?')) return;
+  call('apiEncMarcarRecebida', num, falta).then(function () { msg('Encomenda ' + num + ' recebida ✓'); ENCS = null; encAvancarOrcs(obs, ['A encomendar', 'À espera de material'], 'Em produção', true); abrirEnc(num); });
+}
+
+// ---------- lista de embalagem por colaborador (PDF A4) ----------
+function listaEmbalagem(num) {
+  num = num || ATUAL.num;
+  Promise.all([call('apiRecolha', num), imgDe(LOGO_INO)]).then(function (r) {
+    var R = r[0], ino = r[1];
+    if (!R || !R.respostas || !R.respostas.length) { msg('Ainda não há tamanhos por pessoa. Usa "Tamanhos da equipa (link)" e envia o link ao cliente.', true); return; }
+    var rows = R.respostas.slice().sort(function (a, b) { return a.nome.localeCompare(b.nome, 'pt') || a.art - b.art; });
+    var F = '"Inter", Arial, sans-serif', S = 2, PW = 794, PH = 1123, M = 40, XR = PW - M, pags = [], x = null, y = 0, pg = 0;
+    function nova() { var c = document.createElement('canvas'); c.width = PW * S; c.height = PH * S; x = c.getContext('2d'); x.setTransform(S, 0, 0, S, 0, 0); x.fillStyle = '#fff'; x.fillRect(0, 0, PW, PH); pags.push(c); pg++;
+      var g = x.createLinearGradient(0, 0, PW, 0); g.addColorStop(0, '#0f1a30'); g.addColorStop(1, '#1f3864'); x.fillStyle = g; x.fillRect(0, 0, PW, 96);
+      var b = x.createLinearGradient(0, 0, PW, 0); b.addColorStop(0, '#C2268F'); b.addColorStop(0.5, '#7b3fa0'); b.addColorStop(1, '#1f8fd6'); x.fillStyle = b; x.fillRect(0, 93, PW, 3);
+      rr(x, M, 18, 60, 60, 10); x.fillStyle = '#fff'; x.fill(); if (ino) x.drawImage(ino, M + 5, 23, 50, 50);
+      t('LISTA DE EMBALAGEM', M + 76, 38, '#aab6d3', 600, 9, 'left', 2.4); t(String(ATUAL && ATUAL.num === num ? ATUAL.cliente : R.cliente || '').toUpperCase(), M + 76, 62, '#fff', 900, 19); t('Orçamento ' + num + ' · ' + rows.length + ' linha(s)', M + 76, 80, '#f3b6dc', 700, 10);
+      t('Página ' + pg, XR, 80, '#aab6d3', 600, 9, 'right');
+      y = 126; x.fillStyle = '#14213D'; x.fillRect(M, y - 18, XR - M, 26);
+      [['✓', M + 10], ['NOME', M + 40], ['ARTIGO', M + 250], ['COR', M + 500], ['TAM.', M + 620], ['QTD', XR - 12]].forEach(function (c, i) { t(c[0], c[1], y, '#fff', 800, 9.5, i === 5 ? 'right' : 'left', 1); });
+      y += 26; }
+    function t(s, X, Y, cor, w, sz, al, ls) { x.font = w + ' ' + sz + 'px ' + F; x.fillStyle = cor; esp(x, (ls || 0) + 'px'); x.textAlign = al || 'left'; x.fillText(s, X, Y); esp(x, '0px'); x.textAlign = 'left'; }
+    function corte(s, w) { x.font = '600 11px ' + F; s = String(s || ''); while (s.length > 3 && x.measureText(s).width > w) s = s.slice(0, -2); return s; }
+    nova(); var ant = null;
+    rows.forEach(function (rw, k) {
+      if (y > PH - 70) nova();
+      var a = R.artigos[rw.art - 1] || {}, novoNome = rw.nome !== ant; ant = rw.nome;
+      if (novoNome && k) { x.fillStyle = '#c9cfdb'; x.fillRect(M, y - 17, XR - M, 1); }
+      rr(x, M + 6, y - 11, 13, 13, 3); x.strokeStyle = '#8a93a8'; x.lineWidth = 1; x.stroke();
+      if (novoNome) t(corte(rw.nome, 200), M + 40, y, '#14213D', 800, 11);
+      t(corte(nomeCurto(a.produto || ''), 240), M + 250, y, '#33405e', 600, 11); t(corte(corSemCodigo(a.cor || ''), 110), M + 500, y, '#33405e', 600, 11);
+      t(String(rw.tam), M + 620, y, '#14213D', 900, 12); t(String(rw.qtd || 1), XR - 12, y, '#14213D', 800, 11, 'right');
+      if (rw.nota) { y += 14; t('↳ ' + corte(rw.nota, 500), M + 40, y, '#9b1c72', 600, 9.5); }
+      y += 22;
+    });
+    // resumo por artigo
+    var tot = R.artigos.map(function () { return {}; }); R.respostas.forEach(function (rw) { var o = tot[rw.art - 1]; if (o) o[rw.tam] = (o[rw.tam] || 0) + (rw.qtd || 1); });
+    if (y > PH - 60 - R.artigos.length * 20) nova(); y += 10; t('RESUMO POR ARTIGO', M, y, '#8a93a8', 700, 9, 'left', 2.2); y += 18;
+    R.artigos.forEach(function (a, k) { var ks = tamOrdem(a, tot[k]); t(nomeCurto(a.produto) + (a.cor ? ' · ' + corSemCodigo(a.cor) : '') + ':  ' + ks.map(function (s) { return s + ' ' + tot[k][s]; }).join(' · ') + '  (total ' + ks.reduce(function (s, z) { return s + tot[k][z]; }, 0) + ')', M, y, '#14213D', 700, 11); y += 20; });
+    Promise.all(pags.map(canvasJpeg)).then(function (pgs) {
+      var bytes = pdfDeJpegs(pgs), nome = 'Lista de embalagem ' + num + '.pdf';
+      OPPDF = { nome: nome, a: bytes }; opAbrir();
+    });
+  });
+}
+
+// ---------- ficha do cliente: logótipos ----------
+function fichaLogos(c) {
+  var z = $('fLogos'); if (!z) return;
+  semFalha(call('apiLogos', c.cliente, c.nif || '')).then(function (l) {
+    if (!$('fLogos')) return;
+    $('fLogos').innerHTML = l && l.length ? '<div class="row" style="flex-wrap:wrap;gap:8px">' + l.map(function (x) {
+      return '<img src="data:' + x.tipo + ';base64,' + x.b64 + '" title="' + esc(x.nome) + '" style="width:76px;height:76px;object-fit:contain;border:1px solid var(--linha);border-radius:8px;background:#8a93a8;padding:4px">'; }).join('') + '</div>'
+      : '<div class="mut">Sem logótipos guardados — guarda-os a partir da Maquete.</div>';
+  });
 }
 
 iniciar();
