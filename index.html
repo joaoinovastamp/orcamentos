@@ -131,6 +131,12 @@ var MARGEM_ALERTA = 0.25;
 var API = 'https://script.google.com/macros/s/AKfycby0OuenHSPaxgmop0q1uMh_Y3OxLCV4KYdx8WnrP76cjZiPFaEZFXrYqXw42jdv3qhwrg/exec';
 function call(fn) {
   var args = [PIN].concat(Array.prototype.slice.call(arguments, 1));
+  if (fn === 'apiLogoGuardar') LOGOS_C = {};
+  // gravações: as listas guardadas no telemóvel deixam de valer
+  if (['apiProdGuardar', 'apiPagamento', 'apiPagamentoApagar', 'apiEstado', 'apiEncGuardar', 'apiEncMarcarEnviada', 'apiEncMarcarRecebida', 'apiOrcEliminar', 'apiMaqAprovarManual',
+       'apiCriarEncomenda', 'apiEscolhaAplicada', 'apiMaqueteGuardar'].indexOf(fn) >= 0 || (fn === 'apiCalcular' && arguments[2])) {
+    PROD = null; try { localStorage.removeItem('inovastamp_hoje'); } catch (x) {}
+  }
   carregando(true);
   function falha(t) {
     carregando(false);
@@ -168,13 +174,29 @@ function navOn(id) { ['n-lista','n-prod','n-novo','n-cons','n-enc','n-res','n-ma
 // ---------------- arranque ----------------
 var ABRIR_OP = (function () { try { return new URLSearchParams(location.search).get('op') || ''; } catch (e) { return ''; } })(), OP_FOCO = false, PRONTO_MSG = false;
 var FIM_OP = (function () { try { return new URLSearchParams(location.search).get('fim') === '1'; } catch (e) { return false; } })();
+// guarda no telemóvel o que muda pouco (produtos, cores, clientes, tamanhos) e as listas do dia: a app abre logo e atualiza por trás
+function lsGet(k) { try { var v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch (e) { return null; } }
+function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+function erroCodigo(e) { if (String(e && e.error || e || '').indexOf('CODIGO_ERRADO') >= 0) { PIN = ''; try { localStorage.removeItem('inovastamp_pin'); } catch (x) {} entrar('Código errado.'); return true; } return false; }
+var LOGOS_C = {};
+function logosDe(nome, nif) {
+  var k = String(nome || '') + '|' + String(nif || ''), c = LOGOS_C[k];
+  if (c && Date.now() - c.t < 600000) return Promise.resolve(c.l);
+  return call('apiLogos', nome, nif).then(function (l) { LOGOS_C[k] = { t: Date.now(), l: l }; return l; });
+}
 function iniciar() {
   if (!PIN) { entrar(); return; }
-  call('apiInit').then(function (d) {
-    D = d;
+  var seguir = function () {
     if (ABRIR_OP) { var n = ABRIR_OP; ABRIR_OP = ''; try { history.replaceState(null, '', location.pathname); } catch (e) {} OP_FOCO = true; abrir(n); }
     else irHoje();
-  });
+  };
+  var cD = lsGet('inovastamp_D');
+  if (!TAMS) TAMS = lsGet('inovastamp_tams');
+  if (cD && cD.produtos) {
+    D = cD; seguir();
+    callQuieto('apiInit').then(function (d) { D = d; lsSet('inovastamp_D', d); }).catch(erroCodigo);
+  } else call('apiInit').then(function (d) { D = d; lsSet('inovastamp_D', d); seguir(); });
+  setTimeout(function () { callQuieto('apiTamanhos').then(function (t) { TAMS = t; lsSet('inovastamp_tams', t); }).catch(function () {}); }, 2500);
 }
 function js(v) { return esc(JSON.stringify(v)); }
 // fornecedores (aba Fornecedores da folha): etiqueta no nome do produto → fornecedor; sem etiqueta = Velilla
@@ -209,7 +231,7 @@ function okPin() {
   PIN = p;
   call('apiEntrar').then(function () { try { localStorage.setItem('inovastamp_pin', p); } catch (e) {} iniciar(); });
 }
-function recarregar() { D = null; STOCK = null; iniciar(); }
+function recarregar() { D = null; STOCK = null; LOGOS_C = {}; try { localStorage.removeItem('inovastamp_D'); localStorage.removeItem('inovastamp_hoje'); } catch (e) {} iniciar(); }
 
 // ---------------- lista ----------------
 function irLista(rec) {
@@ -347,7 +369,7 @@ function orcRecursos(o) {
   var pF = refs.reduce(function (p, ref) {   // uma a uma (o servidor responde melhor assim)
     return p.then(function () { return fotoHD(ref).then(function (r) { return r && r.b64 ? r : semFalha(call('apiFoto', ref)).then(function (r2) { return r2 && r2.b64 ? r2 : semFalha(call('apiFoto', ref)); }); }).then(imgDeR).then(function (im) { fotos[ref] = im; if (!im) orcRecursos.faltou = (orcRecursos.faltou || 0) + 1; }); });
   }, Promise.resolve());
-  var pL = semFalha(call('apiLogos', o.cliente, o.nif || '')).then(function (l) {
+  var pL = semFalha(logosDe(o.cliente, o.nif || '')).then(function (l) {
     l = l || []; return Promise.all(l.map(function (x) { return imgDeR(x); })).then(function (ims) {
       var esc = null, qq = null; ims.forEach(function (im) { if (!im) return; if (!qq) qq = im; if (!esc && claroOuEscuro(im) === 'escuro') esc = im; }); return esc || qq;
     });
@@ -1132,7 +1154,7 @@ function catRecursos(D, cliente) {
     var hd = false;
     return p.then(function () { return fotoHD(ref).then(function (r) { if (r && r.b64) { hd = true; return r; } return semFalha(call('apiFoto', ref)); }).then(imgDeR).then(function (im) { if (im) im._hd = hd; fotos[ref] = im; }); });
   }, Promise.resolve());
-  var pL = cliente ? semFalha(call('apiLogos', cliente, '')).then(function (l) {
+  var pL = cliente ? semFalha(logosDe(cliente, '')).then(function (l) {
     l = l || []; return Promise.all(l.map(imgDeR)).then(function (ims) { var e = null, q = null; ims.forEach(function (im) { if (!im) return; if (!q) q = im; if (!e && claroOuEscuro(im) === 'escuro') e = im; }); return e || q; });
   }) : Promise.resolve(null);
   var pT = TAMS ? Promise.resolve(TAMS) : semFalha(call('apiTamanhos')).then(function (t) { if (t) TAMS = t; return t; });
@@ -1557,7 +1579,7 @@ function mqEscolherCliente(nome) {
 var LOGOS = [];
 function mqLogos() {
   if (!MQ.cli || !MQ.cli.nome) { msg('Escolhe primeiro o cliente.', true); return; }
-  call('apiLogos', MQ.cli.nome, MQ.cli.nif || '').then(function (l) {
+  logosDe(MQ.cli.nome, MQ.cli.nif || '').then(function (l) {
     LOGOS = l;
     $('logoZona').innerHTML = l.length ? '<div class="row" style="flex-wrap:wrap;gap:8px;margin-top:8px">' + l.map(function (x, i) {
       return '<img src="data:' + x.tipo + ';base64,' + x.b64 + '" title="' + esc(x.nome) + '" onclick="mqUsarLogo(' + i + ')" style="width:72px;height:72px;object-fit:contain;border:1px solid var(--linha);border-radius:8px;background:#fff;padding:4px">';
@@ -1939,7 +1961,12 @@ function separadores(atual) {
   }).join('') + '</div>';
 }
 function carregarProducao(cb) { call('apiProducao').then(function (r) { PROD = r; cb(); }); }
-function irProducao() { navOn('n-prod'); $('titulo').textContent = 'Produção'; carregarProducao(desenharProducao); }
+function irProducao() {
+  navOn('n-prod'); $('titulo').textContent = 'Produção';
+  if (!(PROD && PROD.lista)) { carregarProducao(desenharProducao); return; }
+  desenharProducao();
+  callQuieto('apiProducao').then(function (r) { PROD = r; if ($('titulo').textContent === 'Produção') desenharProducao(); }).catch(erroCodigo);
+}
 function irCobrar() { navOn('n-prod'); $('titulo').textContent = 'Por cobrar'; carregarProducao(desenharCobrar); }
 function diasPara(iso) { if (!iso) return null; return Math.round((new Date(iso + 'T00:00:00') - new Date(PROD.hoje + 'T00:00:00')) / 86400000); }
 function infoEntrega(o) {
@@ -2056,7 +2083,7 @@ function opMaqDe(a, p) {
 }
 function fichaProducao() {
   var num = ATUAL.num; $('opZona').innerHTML = '<div class="card mut" style="text-align:center">A preparar…</div>';
-  Promise.all([call('apiAbrir', num), semFalha(call('apiLogos', ATUAL.cliente, ATUAL.nif || '')), TAMS ? Promise.resolve(TAMS) : semFalha(call('apiTamanhos')), semFalha(call('apiMaqLados', num))]).then(function (r) {
+  Promise.all([call('apiAbrir', num), semFalha(logosDe(ATUAL.cliente, ATUAL.nif || '')), TAMS ? Promise.resolve(TAMS) : semFalha(call('apiTamanhos')), semFalha(call('apiMaqLados', num))]).then(function (r) {
     var o = r[0], logos = r[1] || []; if (r[2]) TAMS = r[2];
     var arts = o.linhas.map(function (l, i) {
       var pos = [l.pers1, l.pers2].filter(opTemPers).map(function (p) { return { nome: p, logo: -1 }; });
@@ -2261,7 +2288,7 @@ function maqueteDoOrc() {
   var i0 = 0; MQ.orcLinhas.some(function (l, i) { if (l.pers) { i0 = i; return true; } });
   if (MQ.orcLinhas.length) mqArtigoOrc(i0, true); else irMaquete();
   // põe logo o logótipo do cliente (o 1.º guardado), se ainda não houver desenho
-  call('apiLogos', o.cliente, o.nif || '').then(function (l) {
+  logosDe(o.cliente, o.nif || '').then(function (l) {
     LOGOS = l; mqTomLogos();
     if (l.length && !MQ.L.F.orig) setTimeout(function () { var li = mqLogoParaCor(MQ.corOrc); MQ.lado = 'F'; mqUsarLogo(li >= 0 ? li : 0); }, 300);
   });
@@ -3218,10 +3245,15 @@ function jsA(s) { return esc(JSON.stringify(String(s))); }
 // ---------- ecrã Hoje ----------
 function irHoje() {
   navOn('n-lista'); $('titulo').textContent = 'Hoje';
-  $('main').innerHTML = separadores('hoje') + '<div class="card mut" style="text-align:center">A preparar o dia…</div>';
-  Promise.all([call('apiLista'), call('apiProducao'), semFalha(call('apiEncLista'))]).then(function (r) {
-    LISTA = r[0] || []; PROD = r[1]; ENCS = r[2] || []; desenharHoje();
-  });
+  var c = lsGet('inovastamp_hoje');
+  if (c && (!PROD || !LISTA.length)) { LISTA = c.l || []; PROD = c.p; ENCS = c.e || []; }
+  if (PROD && PROD.lista) desenharHoje(); else $('main').innerHTML = separadores('hoje') + '<div class="card mut" style="text-align:center">A preparar o dia…</div>';
+  var z0 = $('hCorpo'); if (z0) z0.insertAdjacentHTML('afterbegin', '<div class="mut" id="hAtual" style="margin:4px 2px">A atualizar…</div>');
+  Promise.all([callQuieto('apiLista'), callQuieto('apiProducao'), callQuieto('apiEncLista').catch(function () { return []; })]).then(function (r) {
+    LISTA = r[0] || []; PROD = r[1]; ENCS = r[2] || []; lsSet('inovastamp_hoje', { l: LISTA, p: PROD, e: ENCS });
+    if ($('titulo').textContent !== 'Hoje') return;
+    if ($('hCorpo')) { hojeBusca(); hojeCorpo(); } else desenharHoje();
+  }).catch(function (e) { if (!erroCodigo(e)) { var a = $('hAtual'); if (a) a.textContent = 'Sem ligação — a mostrar os dados guardados.'; } });
 }
 function desenharHoje() {
   $('main').innerHTML = separadores('hoje') +
@@ -3424,7 +3456,7 @@ function listaEmbalagem(num) {
 // ---------- ficha do cliente: logótipos ----------
 function fichaLogos(c) {
   var z = $('fLogos'); if (!z) return;
-  semFalha(call('apiLogos', c.cliente, c.nif || '')).then(function (l) {
+  semFalha(logosDe(c.cliente, c.nif || '')).then(function (l) {
     if (!$('fLogos')) return;
     $('fLogos').innerHTML = l && l.length ? '<div class="row" style="flex-wrap:wrap;gap:8px">' + l.map(function (x) {
       return '<img src="data:' + x.tipo + ';base64,' + x.b64 + '" title="' + esc(x.nome) + '" style="width:76px;height:76px;object-fit:contain;border:1px solid var(--linha);border-radius:8px;background:#8a93a8;padding:4px">'; }).join('') + '</div>'
