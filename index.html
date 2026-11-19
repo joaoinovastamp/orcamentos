@@ -325,7 +325,7 @@ function desenharDetalhe(o) {
     '<div class="mut" style="margin-top:6px">Com Nº de fatura passa a Faturado. Em produção / Faturado retira as peças do stock.</div>' +
     '<div class="acts"><button class="btn ok" onclick="guardarEstado(\'' + esc(o.num) + '\')">Guardar estado</button></div></div>' +
     '<h2>Mensagem ao cliente</h2><div class="card"><div class="acts"><button class="btn sec" onclick="mensagem(\'sinal\')">Pedir sinal</button>' +
-    '<button class="btn sec" onclick="mensagem(\'pronto\')">Pronto p/ levantar</button><button class="btn sec" onclick="mensagem(\'pagar\')">Lembrar pagamento</button><button class="btn sec" onclick="pedirAvaliacao()">Pedir avaliação ⭐</button></div><div id="msgZona"></div></div>';
+    '<button class="btn sec" onclick="mensagem(\'pronto\')">Pronto p/ levantar</button><button class="btn sec" onclick="mensagem(\'pagar\')">Lembrar pagamento</button><button class="btn sec" onclick="enviarAvaliacao(ATUAL.num, false)">Pedir avaliação ⭐</button></div><div id="msgZona"></div></div>';
   $('main').innerHTML = h;
   if ($('prodZona')) carregarProd(o.num);
   encOrcZona(o);
@@ -420,7 +420,8 @@ function orcDesenhar(o, R) {
     return ps;
   }
   var maxPartes = 1; o.linhas.forEach(function (l) { maxPartes = Math.max(maxPartes, partesDe(l).length); });
-  var nLin = maxPartes > 1 ? maxPartes + 1 : 1; RH = Math.max(RH, (compacto ? 80 : 91) + 15 * (nLin - 1) + 16);
+  var DICA = o.linhas.map(function (l) { try { return dicaEscalao(l); } catch (e) { return null; } }), temDica = DICA.some(Boolean);
+  var nLin = maxPartes > 1 ? maxPartes + 1 : 1; RH = Math.max(RH, (compacto ? 80 : 91) + 15 * (nLin - 1) + 16 + (temDica ? 16 : 0));
   var rodapeY = PH - 48, resumoH = 330;
   var npag = 1, pg = 1;
   // ---------- página 1: cabeçalho ----------
@@ -497,6 +498,9 @@ function orcDesenhar(o, R) {
         txt(orcEur(l.unitC), 632, yy + 1, '#14213D', 800, 11, 'right');
         txt(orcEur(l.totC), XR, yy + 1, '#14213D', 900, 12, 'right');
       }
+      if (DICA[li]) { var dk = DICA[li], dy = partes.length > 1 ? yy + 18 : yy + 2;
+        var dtx = 'A partir de ' + dk.q + ' peças: ' + orcEur(dk.v) + ' por unidade (−' + dk.poupa + '%)';
+        var dw2 = larg(dtx, 700, 9.2) + 22; x.fillStyle = '#fbeef6'; rr(x, tx + 8, dy - 11, dw2, 16, 8); x.fill(); txt(dtx, tx + 19, dy + 1, '#9b1c72', 700, 9.2); }
       y += RH; x.fillStyle = '#e6e9f0'; x.fillRect(M, y, XR - M, 1);
     }
     if (p === dist.length - 1) {
@@ -2025,7 +2029,7 @@ function entregarProd(num) {
   var p = prodDe(num), falta = Math.round(((p.tC || 0) - (p.pago || 0)) * 100) / 100;
   if (falta > 0.005 && !confirm('Ainda falta pagar ' + eur(falta) + '. Marcar ' + num + ' como entregue na mesma?')) return;
   if (falta <= 0.005 && !confirm('Marcar ' + num + ' como entregue ao cliente?')) return;
-  call('apiProdGuardar', num, { fase: 'Entregue', entrega: p.entrega || '', notas: p.notas || '' }).then(function () { msg(num + ': entregue ✓ — agora é boa altura para pedir a avaliação.'); LISTA = []; AVAL_MSG = true; OP_FOCO = true; abrir(num); });
+  call('apiProdGuardar', num, { fase: 'Entregue', entrega: p.entrega || '', notas: p.notas || '' }).then(function () { msg(num + ': entregue ✓ — a enviar o pedido de avaliação ao cliente…'); LISTA = []; AVAL_MSG = true; OP_FOCO = true; abrir(num); });
 }
 function desenharCobrar() {
   var l = PROD.lista.filter(function (o) { return o.tC - o.pago > 0.005; }), tot = l.reduce(function (a, o) { return a + o.tC - o.pago; }, 0);
@@ -2049,7 +2053,7 @@ function desenharProd() {
     '<div><label>Data de entrega</label><input id="pEnt" type="date" value="' + esc(p.entrega) + '"></div></div>' +
     '<label>Notas de produção (oficina)</label><textarea id="pNotas" rows="2" placeholder="ex.: logótipo frente 25 cm, costas nome + nº">' + esc(p.notas) + '</textarea>' +
     (p.fase === 'Pronto' ? '<div class="ok-t" style="margin-top:8px">✓ Produção concluída — pronto a levantar' + (falta > 0.005 ? ' · falta pagar ' + eur(falta) : ' · pago') + '</div><div class="acts"><button class="btn wa" onclick="mensagem(\'pronto\',\'\',\'prontoMsg\')">Avisar o cliente</button><button class="btn sec" onclick="entregarProd(ATUAL.num)">Entregue ao cliente</button></div>' + (DEFEITOS && DEFEITOS.num === p.num ? '<div class="acts"><button class="btn sec" onclick="encReposicao()">🛒 Encomendar a reposição dos defeitos (' + DEFEITOS.linhas.reduce(function (a, d) { return a + d.qtd; }, 0) + ' pç)</button></div>' : '')
-      : p.fase === 'Entregue' ? '<div class="ok-t" style="margin-top:8px">✓ Entregue ao cliente</div><div class="acts"><button class="btn wa" onclick="pedirAvaliacao(\'prontoMsg\')">Pedir avaliação no Google ⭐</button></div>'
+      : p.fase === 'Entregue' ? '<div class="ok-t" style="margin-top:8px">✓ Entregue ao cliente</div><div class="acts"><button class="btn" onclick="enviarAvaliacao(ATUAL.num, false)">Email de avaliação ⭐</button><button class="btn wa" onclick="pedirAvaliacao(\'prontoMsg\')">Por WhatsApp</button></div>'
       : '<div class="acts"><button class="btn ok" style="font-size:17px;padding:14px" onclick="concluirProd(ATUAL.num)">✓ Produção concluída</button></div>') + '<div id="prontoMsg"></div>' +
     '<div class="acts"><button class="btn sec" onclick="guardarProd()">Guardar produção</button><button class="btn sec" onclick="fichaProducao()">Ordem de produção (PDF)</button></div><div class="acts"><button class="btn lite" onclick="listaEmbalagem()">Lista de embalagem por pessoa (PDF)</button></div>' +
     infoMaqProd(p) + '<div id="opZona"></div></div>';
@@ -2068,7 +2072,7 @@ function desenharProd() {
   $('prodZona').innerHTML = h;
   if (OP_FOCO) { OP_FOCO = false; setTimeout(function () { var z = $('prodZona'); if (z) z.scrollIntoView({ behavior: 'smooth' }); }, 150); }
   if (cnc) setTimeout(function () { var z = $('cncZona'); if (z) z.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 200);
-  if (AVAL_MSG && p.fase === 'Entregue') { AVAL_MSG = false; setTimeout(function () { pedirAvaliacao('prontoMsg'); }, 300); }
+  if (AVAL_MSG && p.fase === 'Entregue') { AVAL_MSG = false; setTimeout(function () { enviarAvaliacao(p.num, true); }, 300); }
   if (PRONTO_MSG && p.fase === 'Pronto') { PRONTO_MSG = false; mensagem('pronto', '', 'prontoMsg'); }
   if (FIM_OP) { FIM_OP = false; if (p.fase !== 'Pronto' && p.fase !== 'Entregue') { CONCLUIR = p.num; desenharProd(); return; } else msg(p.num + ': já está ' + p.fase + '.'); }
 }
@@ -2278,6 +2282,14 @@ function linkAvaliacao() {
   var l = ''; try { l = localStorage.getItem('inovastamp_aval') || ''; } catch (e) {}
   if (!l) { l = prompt('Cola aqui o link de avaliações do teu Perfil da Empresa no Google\n(Google › Perfil da Empresa › "Pedir avaliações" › copiar link). Só é pedido uma vez.', '') || ''; l = l.trim(); if (l) try { localStorage.setItem('inovastamp_aval', l); } catch (e) {} }
   return l;
+}
+function enviarAvaliacao(num, auto, forcar) {
+  callQuieto('apiEmailAvaliacao', num, !!forcar).then(function (r) {
+    if (r.ok) { msg('Pedido de avaliação enviado por email para ' + r.email + ' ✓'); return; }
+    if (r.motivo === 'ja') { if (!auto && confirm('O pedido de avaliação já foi enviado a ' + r.quando + '. Enviar outra vez?')) enviarAvaliacao(num, false, true); return; }
+    if (r.motivo === 'sem_link') { var l = linkAvaliacao(); if (!l) return; call('apiAvalConfig', l).then(function () { enviarAvaliacao(num, auto, forcar); }); return; }
+    if (r.motivo === 'sem_email') { msg('O cliente não tem email na ficha — envia por WhatsApp.'); pedirAvaliacao('prontoMsg'); }
+  }).catch(function (e) { if (!erroCodigo(e)) msg((e && e.error) || 'Não foi possível enviar o email.', true); });
 }
 function pedirAvaliacao(zona) { var l = linkAvaliacao(); if (!l) { msg('Sem o link de avaliações não dá para pedir — tenta outra vez quando o tiveres.', true); return; } mensagem('avaliacao', l, zona); }
 var MORADA = 'Travessa do Parque Industrial, nº 206, 4830-835 Vilela, Póvoa de Lanhoso';
@@ -3521,6 +3533,24 @@ function calcLocal() {
   }
   sS = Math.round(sS * 100) / 100; sC = Math.round(sC * 100) / 100;
   return { ok: true, local: true, linhas: linhas, subtotal: sS, desc: 0, totS: sS, totC: sC };
+}
+// preço por unidade c/ IVA de uma linha do orçamento (dados de apiAbrir) noutra quantidade — para mostrar o escalão seguinte no PDF
+function precoNoEscalao(l, q) {
+  if (!TABP) TABP = lsGet('inovastamp_tabp');
+  if (!TABP || !TABP.pq) return null; var T = TABP, row = T.pq[String(l.ref || '').trim()]; if (!row) return null;
+  var iva = Number(T.iva) || 0.23, tier = q <= 10 ? 0 : q <= 24 ? 1 : q <= 50 ? 2 : 3, lim = row[3] > 0 ? row[3] : T.lim;
+  var custo = (q >= lim && row[2] !== '' && Number(row[2]) > 0) ? Number(row[2]) : Number(row[0]);
+  var mA = l.margemAj, margem = (mA !== '' && mA != null && Number(mA) > 0) ? Number(mA) : Number(row[1]) - (T.base - T.mt[tier]);
+  var pecaS = Math.round(custo * (1 + margem) * 100) / 100;
+  var tab = function (n) { var r = T.pers.filter(function (x) { return x[0] === n; })[0]; return r ? r[1 + tier] : 0; };
+  var parte = function (n, aj) { if (!n || n === 'Sem personalização') return 0; if (aj !== '' && aj != null) return Number(aj); return Math.max(T.min, Number(tab(n)) || 0); };
+  var p1 = parte(l.pers1, l.precoAj1), p2 = parte(l.pers2, l.precoAj2);
+  return Math.round((cima10(pecaS * (1 + iva)) + (p1 ? cima10(p1 * (1 + iva)) : 0) + (p2 ? cima10(p2 * (1 + iva)) : 0)) * 100) / 100;
+}
+function dicaEscalao(l) {
+  var q = Number(l.qtd) || 0, prox = [11, 25, 51].filter(function (t) { return t > q; })[0]; if (!prox) return null;
+  var v = precoNoEscalao(l, prox), atual = Number(l.unitC) || 0; if (!v || !(atual - v >= 0.1)) return null;
+  return { q: prox, v: v, poupa: Math.round((1 - v / atual) * 100) };
 }
 function pzTodos() { if (ED) ED.linhas.forEach(function (l, i) { var z = $('pz' + i); if (z) z.innerHTML = precoLinha(i); }); }
 
