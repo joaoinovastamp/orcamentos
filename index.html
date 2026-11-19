@@ -172,7 +172,7 @@ function abrirPdf2(num) {
 function navOn(id) { ['n-lista','n-prod','n-novo','n-cons','n-enc','n-res','n-maq'].forEach(function (n) { $(n).className = n === id ? 'on' : ''; }); window.scrollTo(0, 0); }
 
 // ---------------- arranque ----------------
-var ABRIR_OP = (function () { try { return new URLSearchParams(location.search).get('op') || ''; } catch (e) { return ''; } })(), OP_FOCO = false, PRONTO_MSG = false;
+var ABRIR_OP = (function () { try { return new URLSearchParams(location.search).get('op') || ''; } catch (e) { return ''; } })(), OP_FOCO = false, PRONTO_MSG = false, AVAL_MSG = false;
 var FIM_OP = (function () { try { return new URLSearchParams(location.search).get('fim') === '1'; } catch (e) { return false; } })();
 // guarda no telemóvel o que muda pouco (produtos, cores, clientes, tamanhos) e as listas do dia: a app abre logo e atualiza por trás
 function lsGet(k) { try { var v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch (e) { return null; } }
@@ -325,7 +325,7 @@ function desenharDetalhe(o) {
     '<div class="mut" style="margin-top:6px">Com Nº de fatura passa a Faturado. Em produção / Faturado retira as peças do stock.</div>' +
     '<div class="acts"><button class="btn ok" onclick="guardarEstado(\'' + esc(o.num) + '\')">Guardar estado</button></div></div>' +
     '<h2>Mensagem ao cliente</h2><div class="card"><div class="acts"><button class="btn sec" onclick="mensagem(\'sinal\')">Pedir sinal</button>' +
-    '<button class="btn sec" onclick="mensagem(\'pronto\')">Pronto p/ levantar</button><button class="btn sec" onclick="mensagem(\'pagar\')">Lembrar pagamento</button></div><div id="msgZona"></div></div>';
+    '<button class="btn sec" onclick="mensagem(\'pronto\')">Pronto p/ levantar</button><button class="btn sec" onclick="mensagem(\'pagar\')">Lembrar pagamento</button><button class="btn sec" onclick="pedirAvaliacao()">Pedir avaliação ⭐</button></div><div id="msgZona"></div></div>';
   $('main').innerHTML = h;
   if ($('prodZona')) carregarProd(o.num);
   encOrcZona(o);
@@ -504,7 +504,7 @@ function orcDesenhar(o, R) {
       var ry = y + 24;
       txt('CONDIÇÕES', M, ry + 8, '#8a93a8', 700, 8, 'left', 2.4);
       var cond = ['Proposta válida por ' + (o.validade || 30) + ' dias a contar da data.', 'Preços por unidade com IVA incluído (taxa legal em vigor).',
-        'Produção após aprovação da maquete; prazo indicado na adjudicação.', 'Tamanhos confirmados por colaborador antes da produção.'];
+        'Adjudicação com sinal de 50% (salvo acordo em contrário).', 'Produção após aprovação da maquete; prazo indicado na adjudicação.', 'Tamanhos confirmados por colaborador antes da produção.'];
       if (temOpc) cond.push('Artigos marcados OPÇÃO: escolha os que quer ao aprovar online.');
       if (o.obs) cond.push(String(o.obs));
       var cyy = ry + 28; fnt(400, 10.2);
@@ -2025,7 +2025,7 @@ function entregarProd(num) {
   var p = prodDe(num), falta = Math.round(((p.tC || 0) - (p.pago || 0)) * 100) / 100;
   if (falta > 0.005 && !confirm('Ainda falta pagar ' + eur(falta) + '. Marcar ' + num + ' como entregue na mesma?')) return;
   if (falta <= 0.005 && !confirm('Marcar ' + num + ' como entregue ao cliente?')) return;
-  call('apiProdGuardar', num, { fase: 'Entregue', entrega: p.entrega || '', notas: p.notas || '' }).then(function () { msg(num + ': entregue ✓'); LISTA = []; if (ATUAL && ATUAL.num === num) carregarProd(num); else irProducao(); });
+  call('apiProdGuardar', num, { fase: 'Entregue', entrega: p.entrega || '', notas: p.notas || '' }).then(function () { msg(num + ': entregue ✓ — agora é boa altura para pedir a avaliação.'); LISTA = []; AVAL_MSG = true; OP_FOCO = true; abrir(num); });
 }
 function desenharCobrar() {
   var l = PROD.lista.filter(function (o) { return o.tC - o.pago > 0.005; }), tot = l.reduce(function (a, o) { return a + o.tC - o.pago; }, 0);
@@ -2049,7 +2049,7 @@ function desenharProd() {
     '<div><label>Data de entrega</label><input id="pEnt" type="date" value="' + esc(p.entrega) + '"></div></div>' +
     '<label>Notas de produção (oficina)</label><textarea id="pNotas" rows="2" placeholder="ex.: logótipo frente 25 cm, costas nome + nº">' + esc(p.notas) + '</textarea>' +
     (p.fase === 'Pronto' ? '<div class="ok-t" style="margin-top:8px">✓ Produção concluída — pronto a levantar' + (falta > 0.005 ? ' · falta pagar ' + eur(falta) : ' · pago') + '</div><div class="acts"><button class="btn wa" onclick="mensagem(\'pronto\',\'\',\'prontoMsg\')">Avisar o cliente</button><button class="btn sec" onclick="entregarProd(ATUAL.num)">Entregue ao cliente</button></div>' + (DEFEITOS && DEFEITOS.num === p.num ? '<div class="acts"><button class="btn sec" onclick="encReposicao()">🛒 Encomendar a reposição dos defeitos (' + DEFEITOS.linhas.reduce(function (a, d) { return a + d.qtd; }, 0) + ' pç)</button></div>' : '')
-      : p.fase === 'Entregue' ? '<div class="ok-t" style="margin-top:8px">✓ Entregue ao cliente</div>'
+      : p.fase === 'Entregue' ? '<div class="ok-t" style="margin-top:8px">✓ Entregue ao cliente</div><div class="acts"><button class="btn wa" onclick="pedirAvaliacao(\'prontoMsg\')">Pedir avaliação no Google ⭐</button></div>'
       : '<div class="acts"><button class="btn ok" style="font-size:17px;padding:14px" onclick="concluirProd(ATUAL.num)">✓ Produção concluída</button></div>') + '<div id="prontoMsg"></div>' +
     '<div class="acts"><button class="btn sec" onclick="guardarProd()">Guardar produção</button><button class="btn sec" onclick="fichaProducao()">Ordem de produção (PDF)</button></div><div class="acts"><button class="btn lite" onclick="listaEmbalagem()">Lista de embalagem por pessoa (PDF)</button></div>' +
     infoMaqProd(p) + '<div id="opZona"></div></div>';
@@ -2063,10 +2063,12 @@ function desenharProd() {
     '<div class="g3" style="margin-top:6px"><div><label>Valor €</label><input id="pgV" type="number" step="0.01" inputmode="decimal" placeholder="' + (p.pago ? falta.toFixed(2) : (p.tC / 2).toFixed(2)) + '"></div>' +
     '<div><label>Método</label><select id="pgM">' + opts(['MB Way', 'Transferência', 'Dinheiro', 'Multibanco', 'Cheque'], 'MB Way') + '</select></div>' +
     '<div><label>Data</label><input id="pgD" type="date" value="' + esc(D.hoje) + '"></div></div><label>Nota</label><input id="pgN" placeholder="ex.: sinal 50%">' +
-    '<div class="acts"><button class="btn sec" onclick="registarPag()">Registar pagamento</button></div><div class="mut">Valor vazio = ' + (p.pago ? 'o que falta' : 'sinal de 50%') + '.</div></div>';
+    '<div class="acts"><button class="btn sec" onclick="registarPag()">Registar pagamento</button></div><div class="mut">Valor vazio = ' + (p.pago ? 'o que falta' : 'sinal de 50%') + '.</div>' +
+    (!(p.pago > 0) && p.fase !== 'Entregue' ? '<div class="mut" style="margin-top:6px">Sinal de 50% (' + eur(Math.round(p.tC / 2 * 100) / 100) + ') indicado no orçamento — <b>opcional</b>, não impede encomendar nem produzir. <a href="#" onclick="mensagem(\'sinal\');return false">Pedir sinal</a></div>' : '') + '</div>';
   $('prodZona').innerHTML = h;
   if (OP_FOCO) { OP_FOCO = false; setTimeout(function () { var z = $('prodZona'); if (z) z.scrollIntoView({ behavior: 'smooth' }); }, 150); }
   if (cnc) setTimeout(function () { var z = $('cncZona'); if (z) z.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 200);
+  if (AVAL_MSG && p.fase === 'Entregue') { AVAL_MSG = false; setTimeout(function () { pedirAvaliacao('prontoMsg'); }, 300); }
   if (PRONTO_MSG && p.fase === 'Pronto') { PRONTO_MSG = false; mensagem('pronto', '', 'prontoMsg'); }
   if (FIM_OP) { FIM_OP = false; if (p.fase !== 'Pronto' && p.fase !== 'Entregue') { CONCLUIR = p.num; desenharProd(); return; } else msg(p.num + ': já está ' + p.fase + '.'); }
 }
@@ -2271,6 +2273,13 @@ function opDesenhar(o, info, metades, ino) {
 function opAbrir() { var url = URL.createObjectURL(new Blob([OPPDF.a], { type: 'application/pdf' })), l = document.createElement('a'); l.href = url; l.download = OPPDF.nome; l.target = '_blank'; document.body.appendChild(l); l.click(); l.remove(); }
 function opPartilhar() { navigator.share({ files: [new File([OPPDF.a], OPPDF.nome, { type: 'application/pdf' })], title: OPPDF.nome }).catch(function () {}); }
 // --- mensagens ao cliente (texto editável; envia por WhatsApp ou email) ---
+var TXT_AVAL = 'Excelente serviço! As peças personalizadas ficaram com ótima qualidade e a INOVASTAMP teve uma capacidade de resposta muito rápida, sempre disponível e a cumprir o prazo. Recomendo!';
+function linkAvaliacao() {
+  var l = ''; try { l = localStorage.getItem('inovastamp_aval') || ''; } catch (e) {}
+  if (!l) { l = prompt('Cola aqui o link de avaliações do teu Perfil da Empresa no Google\n(Google › Perfil da Empresa › "Pedir avaliações" › copiar link). Só é pedido uma vez.', '') || ''; l = l.trim(); if (l) try { localStorage.setItem('inovastamp_aval', l); } catch (e) {} }
+  return l;
+}
+function pedirAvaliacao(zona) { var l = linkAvaliacao(); if (!l) { msg('Sem o link de avaliações não dá para pedir — tenta outra vez quando o tiveres.', true); return; } mensagem('avaliacao', l, zona); }
 var MORADA = 'Travessa do Parque Industrial, nº 206, 4830-835 Vilela, Póvoa de Lanhoso';
 function mensagem(tipo, link, zona) {
   var o = ATUAL; if (!o) return;
@@ -2278,13 +2287,15 @@ function mensagem(tipo, link, zona) {
   ['msgZona', 'maqApMsg', 'recMsg', 'prontoMsg'].forEach(function (z) { if (z !== zona && $(z)) $(z).innerHTML = ''; });
   var p = PR && PR.num === o.num ? PR : { tC: o.tC, pago: 0 }, falta = Math.max(0, Math.round((p.tC - p.pago) * 100) / 100), ola = 'Bom dia' + (o.cliente ? ' ' + o.cliente : '') + ',\n\n';
   var t = tipo === 'sinal' ? ola + 'Obrigado pela adjudicação do orçamento ' + o.num + ' (' + eur(o.tC) + ' com IVA).\nPara avançarmos com a encomenda do material e a produção, agradecemos o sinal de 50% (' + eur(Math.round(o.tC / 2 * 100) / 100) + '), por MB Way ou transferência. Enviaremos a confirmação do prazo de entrega.\n\nObrigado,\nINOVASTAMP'
+    : tipo === 'avaliacao' ? ola + 'Muito obrigado pela confiança na INOVASTAMP!\nSe ficou satisfeito, a sua avaliação no Google ajuda-nos imenso — demora 30 segundos:\n' + (link || '') +
+      '\n\nBasta tocar nas ⭐⭐⭐⭐⭐ (5 estrelas). Se quiser, pode copiar este texto:\n"' + TXT_AVAL + '"\n\nObrigado,\nINOVASTAMP'
     : tipo === 'pronto' ? ola + 'A sua encomenda (orçamento ' + o.num + ') está concluída e pronta a levantar.\n\n' +
       (falta > 0.005 ? 'Para a podermos entregar, falta o pagamento de ' + eur(falta) + ' (total ' + eur(p.tC) + ', já recebido ' + eur(p.pago || 0) + '). Pode pagar por MB Way ou transferência e enviar-nos o comprovativo.\n\n' : 'O pagamento está regularizado — obrigado!\n\n') +
       'Pode levantar na nossa morada: ' + MORADA + '. Se preferir, combinamos a entrega.\n\nObrigado,\nINOVASTAMP'
     : tipo === 'maquete' ? ola + 'Segue a maquete da personalização (orçamento ' + o.num + ') para aprovação:\n' + link + '\n\nNa página pode aprovar ou pedir alterações.\n\nObrigado,\nINOVASTAMP'
     : tipo === 'tamanhos' ? ola + 'Para prepararmos a encomenda (orçamento ' + o.num + '), pedimos que cada colaborador indique o seu tamanho neste link:\n' + link + '\n\nDemora menos de um minuto e pode reencaminhar esta mensagem à equipa.\n\nObrigado,\nINOVASTAMP'
     : ola + 'Relembramos que está em falta o pagamento de ' + eur(falta) + ' referente ao orçamento ' + o.num + (o.fatura ? ' (fatura ' + o.fatura + ')' : '') + '.\nPode pagar por MB Way ou transferência. Se já efetuou o pagamento, por favor ignore esta mensagem.\n\nObrigado,\nINOVASTAMP';
-  var assunto = tipo === 'sinal' ? 'Orçamento ' + o.num + ' — sinal para avançar' : tipo === 'pronto' ? 'A sua encomenda está pronta — INOVASTAMP'
+  var assunto = tipo === 'avaliacao' ? 'Obrigado! A sua opinião conta — INOVASTAMP' : tipo === 'sinal' ? 'Orçamento ' + o.num + ' — sinal para avançar' : tipo === 'pronto' ? 'A sua encomenda está pronta — INOVASTAMP'
     : tipo === 'maquete' ? 'Maquete para aprovação — orçamento ' + o.num : tipo === 'tamanhos' ? 'Tamanhos da equipa — orçamento ' + o.num : 'Pagamento em falta — orçamento ' + o.num;
   $(zona).innerHTML = '<input id="mAss" value="' + esc(assunto) + '" style="margin-top:8px"><textarea id="mTxt" rows="8" style="margin-top:6px">' + esc(t) + '</textarea>' +
     '<div class="acts"><button class="btn wa" onclick="msgWhats()">WhatsApp' + (o.tel ? ' (' + esc(o.tel) + ')' : '') + '</button><button class="btn" onclick="msgEmail()"' + (o.email ? '' : ' disabled') + '>Email</button></div>';
