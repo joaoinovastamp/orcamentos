@@ -647,7 +647,7 @@ function duplicar() {
   ED = { numero: '', data: D.hoje, cliente: o.cliente, nif: o.nif, email: o.email, tel: o.tel, morada: o.morada, cp: o.cp,
          validade: o.validade, obs: o.obs, desconto: o.desconto === '' ? '' : Math.round(o.desconto * 1000) / 10, estado: '', fatura: '', margemGlobal: '',
          linhas: o.linhas.map(function (l) { return { produto: l.produto, ref: l.ref, cor: l.cor, qtd: l.qtd, tam: l.tam || '',
-           margemAj: l.margemAj === '' ? '' : Math.round(l.margemAj * 1000) / 10, pers1: l.pers1, precoAj1: l.precoAj1, pers2: l.pers2, precoAj2: l.precoAj2 }; }) };
+           margemAj: (l.margemAj === '' || l.margemAj === null || !Number(l.margemAj)) ? '' : Math.round(l.margemAj * 1000) / 10, pers1: l.pers1, precoAj1: l.precoAj1, pers2: l.pers2, precoAj2: l.precoAj2 }; }) };
   (o.opcoes || []).forEach(function (k) { if (ED.linhas[k]) ED.linhas[k].opc = true; });
   CALC = null; desenharEditor();
   msg('Cópia de ' + o.num + '. Muda o cliente ou os artigos e carrega em Guardar — fica com um número novo.');
@@ -685,7 +685,7 @@ function editar(num, depois) {
   call('apiAbrir', num).then(function (o) {
     ED = { numero: o.num, data: o.data, cliente: o.cliente, nif: o.nif, email: o.email, tel: o.tel, morada: o.morada, cp: o.cp,
            validade: o.validade, obs: o.obs, desconto: o.desconto === '' ? '' : Math.round(o.desconto * 1000) / 10, estado: o.estado, fatura: o.fatura,
-           linhas: o.linhas.map(function (l) { return { produto: l.produto, ref: l.ref, cor: l.cor, qtd: l.qtd, tam: l.tam || '', margemAj: l.margemAj === '' ? '' : Math.round(l.margemAj * 1000) / 10,
+           linhas: o.linhas.map(function (l) { return { produto: l.produto, ref: l.ref, cor: l.cor, qtd: l.qtd, tam: l.tam || '', margemAj: (l.margemAj === '' || l.margemAj === null || !Number(l.margemAj)) ? '' : Math.round(l.margemAj * 1000) / 10,
              pers1: l.pers1, precoAj1: l.precoAj1, pers2: l.pers2, precoAj2: l.precoAj2 }; }) };
     (o.opcoes || []).forEach(function (k) { if (ED.linhas[k]) ED.linhas[k].opc = true; });
     ED.margemGlobal = ED.linhas.length && ED.linhas.every(function (l) { return l.margemAj !== '' && l.margemAj === ED.linhas[0].margemAj; }) ? ED.linhas[0].margemAj : '';
