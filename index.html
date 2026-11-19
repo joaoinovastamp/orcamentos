@@ -144,6 +144,12 @@ function call(fn) {
       .catch(function (e) { falha('Sem ligação à folha. Verifica a internet e tenta outra vez.'); ko(e); });
   });
 }
+// chamada sem ecrã de espera nem avisos (cálculo automático no editor)
+function callQuieto(fn) {
+  var args = [PIN].concat(Array.prototype.slice.call(arguments, 1));
+  return fetch(API, { method: 'POST', body: JSON.stringify({ fn: fn, args: args }), credentials: 'omit', redirect: 'follow' })
+    .then(function (r) { return r.json(); }).then(function (r) { if (r && r.ok) return r.result; throw r; });
+}
 // PDF: vem pela app (funciona com qualquer conta, sem precisar de acesso ao Drive)
 function abrirPdf(num) { comPdfNovo(num, function () { abrirPdf2(num); }); }
 function abrirPdf2(num) {
@@ -728,6 +734,7 @@ function desenharLinhas() {
         : '<input value="' + esc(l.cor) + '" onchange="ED.linhas[' + i + '].cor=this.value;mudou()">') + '</div>' +
       '<div><label>Quantidade</label><input id="q' + i + '" type="number" inputmode="numeric" min="1" value="' + esc(l.qtd) + '" onchange="ED.linhas[' + i + '].qtd=Number(this.value)||\'\';mudou();verTam(' + i + ')"></div>' +
       '<div><label>Margem %</label><input type="number" step="1" value="' + esc(l.margemAj) + '" placeholder="' + (c && c.margem !== '' ? pct(c.margem) : 'tabela') + '" onchange="ED.linhas[' + i + '].margemAj=this.value===\'\'?\'\':Number(this.value);mudou()"></div></div>' +
+      '<div id="pz' + i + '">' + precoLinha(i) + '</div>' +
       '<label>Tamanhos <span class="mut">(opcional · a quantidade passa a ser a soma)</span></label>' + gradeTam(l, i) +
       '<div id="tam' + i + '">' + infoTam(l) + '</div>' +
       '<div class="g2"><div><label>Personalização 1</label><select onchange="ED.linhas[' + i + '].pers1=this.value;mudou()">' + opts(p, l.pers1, '—') + '</select></div>' +
@@ -737,12 +744,36 @@ function desenharLinhas() {
       '<div><label>Pers. 2 · preço final c/ IVA</label><input type="number" step="0.05" inputmode="decimal" value="' + (l.precoAj2 === '' ? '' : (Math.round(Number(l.precoAj2) * 1.23 * 100) / 100)) + '" placeholder="' + (c && c.tab2 !== '' ? eur(Math.ceil(Math.round(Math.max(1, c.tab2) * 123) / 10 - 1e-9) / 10) : 'tabela') + '" onchange="ED.linhas[' + i + '].precoAj2=this.value===\'\'?\'\':Math.round(Number(this.value.replace(\',\',\'.\')) / 1.23 * 10000) / 10000;mudou()"></div>' +
       '</div><div class="mut">Vazio = tabela (mínimo 1 € + IVA). Se escrever um preço, é o preço final c/ IVA que o cliente vê — vale mesmo abaixo do mínimo. As posições sem preço na tabela (ex.: DTF) precisam do preço aqui.</div>' +
       '<button class="btn lite" onclick="dtfDaLinha(' + i + ')">✎ Simular DTF / maquete para este artigo</button><button class="btn lite" onclick="seriDaLinha(' + i + ')">✎ Calcular serigrafia para este artigo</button></details>' +
-      (c ? '<div class="row num" style="margin-top:8px"><span class="sp mut">' + esc(c.escalao) + ' pç · peça ' + eur(c.pecaS) + ' + pers. ' + eur(c.persU) + ' s/IVA</span></div>' +
-        '<div class="row num"><span class="sp">' + l.qtd + ' × <b>' + eur(c.unitC) + '</b> c/IVA</span><b>' + eur(c.totC) + '</b></div>' : '') +
+
       '</div>';
   }).join('') : '<div class="vazio">Ainda sem artigos.</div>';
 }
+var AUTO = { t: null, seq: 0, aCalc: false };
+function precoLinha(i) {
+  var c = CALC && CALC.linhas[i], l = ED && ED.linhas[i];
+  if (!c) return AUTO.aCalc ? '<div class="mut" style="margin-top:6px">A calcular o preço…</div>' : '';
+  return '<div style="background:#f3f5f9;border-radius:10px;padding:8px 10px;margin-top:8px">' +
+    '<div class="row num"><span class="sp">Preço por peça</span><b>' + eur(c.unitC) + ' c/IVA</b><span class="mut" style="margin-left:8px">' + eur(c.unitS) + ' s/IVA</span></div>' +
+    '<div class="row num"><span class="sp">' + (l ? l.qtd : '') + ' pç · total</span><b>' + eur(c.totC) + ' c/IVA</b><span class="mut" style="margin-left:8px">' + eur(c.totS) + ' s/IVA</span></div>' +
+    '<div class="mut num" style="margin-top:2px">peça ' + eur(c.pecaS) + (c.persU ? ' + personalização ' + eur(c.persU) : '') + ' s/IVA · margem ' + (c.margem !== '' ? pct(c.margem) : '—') + ' · escalão ' + esc(c.escalao) + ' pç</div></div>';
+}
+function autoCalc() {
+  clearTimeout(AUTO.t);
+  if (!ED || !ED.linhas.length || !$('eLinhas') || ED.linhas.some(function (l) { return !l.produto || !(Number(l.qtd) > 0); })) return;
+  AUTO.t = setTimeout(function () {
+    if (!$('eLinhas') || CALC) return;
+    var s = ++AUTO.seq; AUTO.aCalc = true; ED.linhas.forEach(function (l, i) { var z = $('pz' + i); if (z) z.innerHTML = precoLinha(i); });
+    try { lerCampos(); } catch (e) {}
+    callQuieto('apiCalcular', payload(false), false).then(function (r) {
+      if (s !== AUTO.seq || !$('eLinhas')) return; AUTO.aCalc = false;
+      if (!r || !r.ok) { ED.linhas.forEach(function (l, i) { var z = $('pz' + i); if (z) z.innerHTML = '<div class="mut" style="margin-top:6px">Carrega em Calcular para ver o preço.</div>'; }); return; }
+      CALC = r;
+      ED.linhas.forEach(function (l, i) { var z = $('pz' + i); if (z) z.innerHTML = precoLinha(i); }); desenharTotais();
+    }).catch(function () { if (s === AUTO.seq) { AUTO.aCalc = false; ED.linhas.forEach(function (l, i) { var z = $('pz' + i); if (z) z.innerHTML = ''; }); } });
+  }, 1200);
+}
 function desenharTotais() {
+  if (!CALC) autoCalc();
   var t = $('eTot');
   var lz0 = $('eLucro'); if (lz0) lz0.innerHTML = '';
   if (!CALC) { t.innerHTML = '<div class="mut">Carrega em <b>Calcular</b> para ver os preços (são os da folha, com as mesmas regras).</div>'; return; }
