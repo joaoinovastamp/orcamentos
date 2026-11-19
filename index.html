@@ -1360,7 +1360,8 @@ function irMaquete() {
     '<div class="acts"><button class="btn sec" onclick="mqGuardar()">⬇ Descarregar foto</button></div>' +
     '<div class="acts"><button class="btn" onclick="mqEmail()">✉ Enviar por email</button><button class="btn wa" onclick="mqWhats()">WhatsApp</button></div><div id="mqZona"></div></div>';
   h += propCartao();
-  h += '<h2>Custo do DTF' + (foto ? '' : ' (' + (MQ.lado === 'F' ? 'frente' : 'costas') + ')') + '</h2><div id="dtfZona"></div>';
+  h += MQ.voltar ? '<h2>Custo do DTF' + (foto ? '' : ' (' + (MQ.lado === 'F' ? 'frente' : 'costas') + ')') + '</h2><div id="dtfZona"></div>'
+    : '<details style="margin-top:10px"><summary class="b" style="margin:6px 2px">Custo do DTF deste desenho</summary><div id="dtfZona"></div></details>';
   $('main').innerHTML = h;
   mqDesenhar(); desenharDtf();
   if (foto && MQ.ref && !MQ.peca) mqCarregarFoto();
@@ -1865,11 +1866,11 @@ function desenharDtf() {
       '<div class="tot"><span>Custo por peça</span><span class="num">' + eur(r.custoPc) + '</span></div>' +
       '<div class="tot big"><span>Preço DTF por peça</span><span class="num">' + eur(r.pv) + ' <span class="mut">c/IVA ' + eur(Math.round(r.pv * (1 + iva) * 100) / 100) + '</span></span></div></div>' +
       (MQ.voltar ? '<div class="acts"><button class="btn ok" onclick="dtfUsar(' + r.pv + ')">Usar ' + eur(r.pv) + '/pç no artigo ' + (MQ.voltar.i + 1) + '</button></div>' : '') + '</div>';
-    h += '<h2>Por quantidade (este desenho)</h2><div class="card"><table class="sim"><tr><th>Qtd</th><th>Filme</th><th>Custo/pç</th><th>Preço/pç</th><th>c/IVA</th></tr>' +
+    h += '<details class="card" style="margin-top:10px"><summary class="b">Preços para outras quantidades</summary><table class="sim" style="margin-top:8px"><tr><th>Qtd</th><th>Filme</th><th>Custo/pç</th><th>Preço/pç</th><th>c/IVA</th></tr>' +
       [1, 5, 10, 25, 50, 100, 250].map(function (q) {
         var x = dtfCalc(DTF.w, DTF.h, q); if (!x) return '';
         return '<tr' + (q === Number(DTF.qtd) ? ' style="font-weight:700"' : '') + '><td>' + q + '</td><td>' + fmtCm(x.metros * 100) + ' cm</td><td>' + eur(x.custoPc) + '</td><td>' + eur(x.pv) + '</td><td>' + eur(Math.round(x.pv * 1.23 * 100) / 100) + '</td></tr>';
-      }).join('') + '</table></div>';
+      }).join('') + '</table></details>';
   }
   z.innerHTML = h;
 }
@@ -2796,11 +2797,11 @@ function desenharSeri() {
     (SERI.cli ? '<button class="btn sec" onclick="seriQuadros()">Quadros do cliente</button>' : '') + '</div><div id="seriQZona"></div>';
   if (SERI.voltar) h += '<div class="acts"><button class="btn ok" onclick="seriUsar()">Usar no artigo ' + (SERI.voltar.i + 1) + ': ' + fin.map(eur).join(' + ') + ' /pç</button></div>' +
     '<div class="mut">O preço fica no campo "Pers. €/pç" do artigo — podes sempre alterá-lo lá.</div>';
-  h += '<h2>Por quantidade</h2><div class="card"><table class="sim"><tr><th>Qtd</th><th>Custo/pç</th><th>Preço/pç</th><th>c/IVA</th><th>Total s/IVA</th></tr>' +
+  h += '<details class="card" style="margin-top:10px"><summary class="b">Preços para outras quantidades</summary><table class="sim" style="margin-top:8px"><tr><th>Qtd</th><th>Custo/pç</th><th>Preço/pç</th><th>c/IVA</th><th>Total s/IVA</th></tr>' +
     [10, 25, 50, 100, 250, 500].concat([qtd]).filter(function (q, i, a) { return a.indexOf(q) === i; }).sort(function (a, b) { return a - b; }).map(function (q) {
       var y = seriCalc(q);
       return '<tr' + (q === qtd ? ' style="font-weight:700"' : '') + '><td>' + q + '</td><td>' + eur(y.custo) + '</td><td>' + eur(y.pv) + '</td><td>' + eur(Math.round(y.pv * 1.23 * 100) / 100) + '</td><td>' + eur(Math.round(y.pv * q * 100) / 100) + '</td></tr>';
-    }).join('') + '</table><div class="mut">Soma das posições, com a margem de cada uma (sem o preço final ajustado).</div></div>';
+    }).join('') + '</table><div class="mut">Soma das posições, com a margem de cada uma (sem o preço final ajustado). Útil para dar preços por escalão a um cliente.</div></details>';
   h += '<details class="card"><summary>Custos e margem (guardados na folha, aba Custos Personalização)</summary><div class="g2">' +
     [['prep', 'Quadro + fotolito por cor €', 0.5], ['acerto', 'Acerto e limpeza por trabalho €', 0.5], ['tinta', 'Tinta por cor por peça (A4) €', 0.01], ['mo', 'Mão de obra por cor por peça €', 0.05],
      ['cura', 'Secagem / cura por peça €', 0.01], ['margem', 'Margem por defeito %', 5], ['min', 'Preço mínimo por posição €', 0.1]].map(function (c) {
