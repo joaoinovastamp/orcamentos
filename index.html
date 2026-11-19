@@ -134,8 +134,8 @@ function call(fn) {
   if (fn === 'apiLogoGuardar') LOGOS_C = {};
   // gravações: as listas guardadas no telemóvel deixam de valer
   if (['apiProdGuardar', 'apiPagamento', 'apiPagamentoApagar', 'apiEstado', 'apiEncGuardar', 'apiEncMarcarEnviada', 'apiEncMarcarRecebida', 'apiOrcEliminar', 'apiMaqAprovarManual',
-       'apiCriarEncomenda', 'apiEscolhaAplicada', 'apiMaqueteGuardar'].indexOf(fn) >= 0 || (fn === 'apiCalcular' && arguments[2])) {
-    PROD = null; try { localStorage.removeItem('inovastamp_hoje'); } catch (x) {}
+       'apiCriarEncomenda', 'apiEscolhaAplicada', 'apiMaqueteGuardar', 'apiOrcOpcoes', 'apiMaqLadosGuardar', 'apiOPNumero', 'apiRecolhaFechar', 'apiRecolhaApagar'].indexOf(fn) >= 0 || (fn === 'apiCalcular' && arguments[2])) {
+    PROD = null; ABR_C = {}; try { localStorage.removeItem('inovastamp_hoje'); } catch (x) {}
   }
   carregando(true);
   function falha(t) {
@@ -196,6 +196,7 @@ function iniciar() {
     D = cD; seguir();
     callQuieto('apiInit').then(function (d) { D = d; lsSet('inovastamp_D', d); }).catch(erroCodigo);
   } else call('apiInit').then(function (d) { D = d; lsSet('inovastamp_D', d); seguir(); });
+  setTimeout(carregarTabela, 4000);
   setTimeout(function () { callQuieto('apiTamanhos').then(function (t) { TAMS = t; lsSet('inovastamp_tams', t); }).catch(function () {}); }, 2500);
 }
 function js(v) { return esc(JSON.stringify(v)); }
@@ -256,7 +257,20 @@ function desenharItens() {
 
 // ---------------- detalhe ----------------
 var ATUAL = null;
-function abrir(num) { call('apiAbrir', num).then(function (o) { ATUAL = o; desenharDetalhe(o); }); }
+function abrir(num) {
+  var c = ABR_C[num], o0 = !c && (LISTA || []).filter(function (x) { return x.num === num; })[0];
+  if (c) { ATUAL = c; desenharDetalhe(c); }
+  else if (o0 && D) {
+    navOn('n-lista'); $('titulo').textContent = num;
+    $('main').innerHTML = '<div class="card"><div class="row"><div class="sp"><div class="b" style="font-size:17px">' + esc(o0.cliente || '—') + '</div><div class="mut">' + dt(o0.data) + ' · ' + (o0.qtd || 0) + ' pç</div></div>' +
+      '<div style="text-align:right"><div class="b num">' + eur(o0.tC) + '</div><span class="tag t-' + esc(String(o0.estado).replace(/\s/g, '')) + '">' + esc(o0.estado) + '</span></div></div></div><div class="card mut" style="text-align:center">A abrir o orçamento…</div>';
+  }
+  (c || o0 ? callQuieto : call)('apiAbrir', num).then(function (o) {
+    var mudou = !c || JSON.stringify(c) !== JSON.stringify(o); ABR_C[num] = o;
+    if ($('titulo').textContent !== num && c) return;
+    if (mudou || !c) { ATUAL = o; desenharDetalhe(o); }
+  }).catch(function (e) { if (!erroCodigo(e) && !c) msg((e && e.error) || 'Sem ligação à folha.', true); });
+}
 // lucro (só no modo gestor): total s/ IVA − custo das peças (a personalização não tem custo registado)
 function blocoLucro(totS, linhas, calc) {
   if (!gestor()) return '';
@@ -746,6 +760,7 @@ function desenharEditor() {
   if (!TAMS) semFalha(call('apiTamanhos')).then(function (t) { if (t) { TAMS = t; if ($('eLinhas')) desenharLinhas(); } });
 }
 function desenharLinhas() {
+  if (!TABP) carregarTabela();
   var p = D.pers;
   $('eLinhas').innerHTML = ED.linhas.length ? ED.linhas.map(function (l, i) {
     var c = CALC && CALC.linhas[i], cores = coresDe(l.ref);
@@ -777,25 +792,26 @@ function precoLinha(i) {
   return '<div style="background:#f3f5f9;border-radius:10px;padding:8px 10px;margin-top:8px">' +
     '<div class="row num"><span class="sp">Preço por peça</span><b>' + eur(c.unitC) + ' c/IVA</b><span class="mut" style="margin-left:8px">' + eur(c.unitS) + ' s/IVA</span></div>' +
     '<div class="row num"><span class="sp">' + (l ? l.qtd : '') + ' pç · total</span><b>' + eur(c.totC) + ' c/IVA</b><span class="mut" style="margin-left:8px">' + eur(c.totS) + ' s/IVA</span></div>' +
-    '<div class="mut num" style="margin-top:2px">peça ' + eur(c.pecaS) + (c.persU ? ' + personalização ' + eur(c.persU) : '') + ' s/IVA · margem ' + (c.margem !== '' ? pct(c.margem) : '—') + ' · escalão ' + esc(c.escalao) + ' pç</div></div>';
+    '<div class="mut num" style="margin-top:2px">' + (CALC.local ? '<span style="color:#b45309">a confirmar · </span>' : '') + 'peça ' + eur(c.pecaS) + (c.persU ? ' + personalização ' + eur(c.persU) : '') + ' s/IVA · margem ' + (c.margem !== '' ? pct(c.margem) : '—') + ' · escalão ' + esc(c.escalao) + ' pç</div></div>';
 }
 function autoCalc() {
   clearTimeout(AUTO.t);
   if (!ED || !ED.linhas.length || !$('eLinhas') || ED.linhas.some(function (l) { return !l.produto || !(Number(l.qtd) > 0); })) return;
   AUTO.t = setTimeout(function () {
-    if (!$('eLinhas') || CALC) return;
-    var s = ++AUTO.seq; AUTO.aCalc = true; ED.linhas.forEach(function (l, i) { var z = $('pz' + i); if (z) z.innerHTML = precoLinha(i); });
+    if (!$('eLinhas') || (CALC && !CALC.local)) return;
+    var s = ++AUTO.seq; AUTO.aCalc = true; if (!CALC) ED.linhas.forEach(function (l, i) { var z = $('pz' + i); if (z) z.innerHTML = precoLinha(i); });
     try { lerCampos(); } catch (e) {}
     callQuieto('apiCalcular', payload(false), false).then(function (r) {
       if (s !== AUTO.seq || !$('eLinhas')) return; AUTO.aCalc = false;
-      if (!r || !r.ok) { ED.linhas.forEach(function (l, i) { var z = $('pz' + i); if (z) z.innerHTML = '<div class="mut" style="margin-top:6px">Carrega em Calcular para ver o preço.</div>'; }); return; }
+      if (!r || !r.ok) { if (!(CALC && CALC.local)) ED.linhas.forEach(function (l, i) { var z = $('pz' + i); if (z) z.innerHTML = '<div class="mut" style="margin-top:6px">Carrega em Calcular para ver o preço.</div>'; }); return; }
       CALC = r;
       ED.linhas.forEach(function (l, i) { var z = $('pz' + i); if (z) z.innerHTML = precoLinha(i); }); desenharTotais();
     }).catch(function () { if (s === AUTO.seq) { AUTO.aCalc = false; ED.linhas.forEach(function (l, i) { var z = $('pz' + i); if (z) z.innerHTML = ''; }); } });
   }, 1200);
 }
 function desenharTotais() {
-  if (!CALC) autoCalc();
+  if (!CALC) { var lc = calcLocal(); if (lc) { CALC = lc; pzTodos(); } }
+  if (!CALC || CALC.local) autoCalc();
   var t = $('eTot');
   var lz0 = $('eLucro'); if (lz0) lz0.innerHTML = '';
   if (!CALC) { t.innerHTML = '<div class="mut">Carrega em <b>Calcular</b> para ver os preços (são os da folha, com as mesmas regras).</div>'; return; }
@@ -803,7 +819,7 @@ function desenharTotais() {
     (CALC.desc ? '<div class="tot"><span>Desconto</span><span class="num">' + eur(CALC.desc) + '</span></div>' : '') +
     '<div class="tot"><span>Total s/ IVA</span><span class="num">' + eur(CALC.totS) + '</span></div>' +
     '<div class="tot big"><span>Total c/ IVA</span><span class="num">' + eur(CALC.totC) + '</span></div>' +
-    '';
+    (CALC.local ? '<div class="mut">A confirmar com a folha…</div>' : '');
   var lz = $('eLucro'); if (lz) lz.innerHTML = blocoLucro(CALC.totS, ED.linhas, CALC.linhas);
 }
 // tamanhos: lê "S:2 M:5 L:3" (ou "2S 5M") e confere com a quantidade
@@ -2022,7 +2038,7 @@ function desenharCobrar() {
 }
 // --- no detalhe do orçamento ---
 var PR = null;
-function carregarProd(num) { call('apiProdAbrir', num).then(function (p) { PR = p; desenharProd(); }); }
+function carregarProd(num) { callQuieto('apiProdAbrir', num).then(function (p) { PR = p; desenharProd(); }).catch(function (e) { if (!erroCodigo(e)) msg((e && e.error) || 'Sem ligação à folha.', true); }); }
 function desenharProd() {
   var p = PR, z = $('prodZona'); if (!z || !ATUAL || p.num !== ATUAL.num) return;
   var falta = Math.round((p.tC - p.pago) * 100) / 100;
@@ -3463,6 +3479,39 @@ function fichaLogos(c) {
       : '<div class="mut">Sem logótipos guardados — guarda-os a partir da Maquete.</div>';
   });
 }
+
+// ================= v64 (19/11/2026): mais rápido — preço calculado no telemóvel e orçamentos abertos na hora =================
+var TABP = null, ABR_C = {};
+function carregarTabela() {
+  if (!TABP) TABP = lsGet('inovastamp_tabp');
+  callQuieto('apiTabelaPrecos').then(function (t) { if (t && t.pq) { TABP = t; lsSet('inovastamp_tabp', t); } }).catch(function () {});
+}
+function cima10(x) { var cent = Math.round(x * 100); return Math.ceil(cent / 10 - 1e-9) / 10; }
+// mesma conta da folha (aba Orcamento): custo (com pack Roly), margem do escalão, preço c/ IVA de cada parte arredondado para cima aos 0,10 €
+function calcLocal() {
+  if (!TABP || !TABP.pq || !ED || !ED.linhas.length) return null;
+  if (ED.desconto !== '' && ED.desconto != null && Number(ED.desconto)) return null;   // com desconto, só a folha
+  var T = TABP, iva = Number(T.iva) || 0.23, linhas = [], sS = 0, sC = 0;
+  for (var i = 0; i < ED.linhas.length; i++) {
+    var l = ED.linhas[i], q = Number(l.qtd) || 0, row = T.pq[String(l.ref || '').trim()];
+    if (!row || !(q > 0)) return null;
+    var tier = q <= 10 ? 0 : q <= 24 ? 1 : q <= 50 ? 2 : 3, lim = row[3] > 0 ? row[3] : T.lim;
+    var custo = (q >= lim && row[2] !== '' && Number(row[2]) > 0) ? Number(row[2]) : Number(row[0]);
+    var margem = l.margemAj !== '' && l.margemAj != null ? Number(l.margemAj) / 100 : Number(row[1]) - (T.base - T.mt[tier]);
+    var pecaS = Math.round(custo * (1 + margem) * 100) / 100;
+    var tab = function (n) { if (!n || n === 'Sem personalização') return ''; var r = T.pers.filter(function (x) { return x[0] === n; })[0]; return r ? r[1 + tier] : 0; };
+    var parte = function (n, aj) { if (!n || n === 'Sem personalização') return 0; if (aj !== '' && aj != null) return Number(aj); return Math.max(T.min, Number(tab(n)) || 0); };
+    var p1 = parte(l.pers1, l.precoAj1), p2 = parte(l.pers2, l.precoAj2);
+    var unitC = Math.round((cima10(pecaS * (1 + iva)) + (p1 ? cima10(p1 * (1 + iva)) : 0) + (p2 ? cima10(p2 * (1 + iva)) : 0)) * 100) / 100;
+    var totC = Math.round(unitC * q * 100) / 100, totS = Math.round(totC / (1 + iva) * 100) / 100;
+    sS += totS; sC += totC;
+    linhas.push({ ref: l.ref, escalao: ['1-10', '11-24', '25-50', '51+'][tier], custo: custo, margem: margem, pecaS: pecaS, tab1: tab(l.pers1), tab2: tab(l.pers2),
+                  persU: Math.round((p1 + p2) * 10000) / 10000, unitS: Math.round(unitC / (1 + iva) * 10000) / 10000, unitC: unitC, totS: totS, totC: totC });
+  }
+  sS = Math.round(sS * 100) / 100; sC = Math.round(sC * 100) / 100;
+  return { ok: true, local: true, linhas: linhas, subtotal: sS, desc: 0, totS: sS, totC: sC };
+}
+function pzTodos() { if (ED) ED.linhas.forEach(function (l, i) { var z = $('pz' + i); if (z) z.innerHTML = precoLinha(i); }); }
 
 iniciar();
 if ('serviceWorker' in navigator) { window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); }); }
