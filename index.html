@@ -687,7 +687,7 @@ function duplicar() {
   ED = { numero: '', data: D.hoje, cliente: o.cliente, nif: o.nif, email: o.email, tel: o.tel, morada: o.morada, cp: o.cp,
          validade: o.validade, obs: o.obs, desconto: o.desconto === '' ? '' : Math.round(o.desconto * 1000) / 10, estado: '', fatura: '', margemGlobal: '',
          linhas: o.linhas.map(function (l) { return { produto: l.produto, ref: l.ref, cor: limpaCor(l.cor), qtd: l.qtd, tam: l.tam || '',
-           margemAj: (l.margemAj === '' || l.margemAj === null || !Number(l.margemAj)) ? '' : (Number(l.margemAj) < 0.001 ? 0 : Math.round(l.margemAj * 1e6) / 1e4), pers1: l.pers1, precoAj1: l.precoAj1, pers2: l.pers2, precoAj2: l.precoAj2 }; }) };
+           margemAj: (l.margemAj === '' || l.margemAj === null || !Number(l.margemAj)) ? '' : (Math.abs(Number(l.margemAj)) < 0.001 && Math.round(Number(l.margemAj) * 1e6) / 1e6 === Number(l.margemAj) ? 0 : margemPct(l.margemAj)), pers1: l.pers1, precoAj1: l.precoAj1, pers2: l.pers2, precoAj2: l.precoAj2 }; }) };
   (o.opcoes || []).forEach(function (k) { if (ED.linhas[k]) ED.linhas[k].opc = true; });
   CALC = null; desenharEditor();
   msg('Cópia de ' + o.num + '. Muda o cliente ou os artigos e carrega em Guardar — fica com um número novo.');
@@ -725,7 +725,7 @@ function editar(num, depois) {
   call('apiAbrir', num).then(function (o) {
     ED = { numero: o.num, data: o.data, cliente: o.cliente, nif: o.nif, email: o.email, tel: o.tel, morada: o.morada, cp: o.cp,
            validade: o.validade, obs: o.obs, desconto: o.desconto === '' ? '' : Math.round(o.desconto * 1000) / 10, estado: o.estado, fatura: o.fatura,
-           linhas: o.linhas.map(function (l) { return { produto: l.produto, ref: l.ref, cor: limpaCor(l.cor), qtd: l.qtd, tam: l.tam || '', margemAj: (l.margemAj === '' || l.margemAj === null || !Number(l.margemAj)) ? '' : (Number(l.margemAj) < 0.001 ? 0 : Math.round(l.margemAj * 1e6) / 1e4),
+           linhas: o.linhas.map(function (l) { return { produto: l.produto, ref: l.ref, cor: limpaCor(l.cor), qtd: l.qtd, tam: l.tam || '', margemAj: (l.margemAj === '' || l.margemAj === null || !Number(l.margemAj)) ? '' : (Math.abs(Number(l.margemAj)) < 0.001 && Math.round(Number(l.margemAj) * 1e6) / 1e6 === Number(l.margemAj) ? 0 : margemPct(l.margemAj)),
              pers1: l.pers1, precoAj1: l.precoAj1, pers2: l.pers2, precoAj2: l.precoAj2 }; }) };
     (o.opcoes || []).forEach(function (k) { if (ED.linhas[k]) ED.linhas[k].opc = true; });
     ED.margemGlobal = ED.linhas.length && ED.linhas.every(function (l) { return l.margemAj !== '' && l.margemAj === ED.linhas[0].margemAj; }) ? ED.linhas[0].margemAj : '';
@@ -774,9 +774,9 @@ function desenharLinhas() {
       '<div class="g3"><div><label>Cor</label>' + (cores.length ? '<select onchange="ED.linhas[' + i + '].cor=this.value;mudou()">' + opts(cores, l.cor, '—') + '</select>'
         : '<input value="' + esc(l.cor) + '" onchange="ED.linhas[' + i + '].cor=this.value;mudou()">') + '</div>' +
       '<div><label>Quantidade</label><input id="q' + i + '" type="number" inputmode="numeric" min="1" value="' + esc(l.qtd) + '" onchange="ED.linhas[' + i + '].qtd=Number(this.value)||\'\';mudou();verTam(' + i + ')"></div>' +
-      '<div><label>Margem %</label><input type="number" step="any" value="' + esc(l.margemAj) + '" placeholder="' + (c && c.margem !== '' ? pct(c.margem) : 'tabela') + '" onchange="ED.linhas[' + i + '].margemAj=this.value===\'\'?\'\':Number(this.value);mudou()"></div></div>' +
-      '<div class="g2"><div><label>Preço final da peça c/ IVA</label><input type="number" step="0.1" inputmode="decimal" placeholder="' + (c ? eur(cima10(Number(c.pecaS) * 1.23)) : 'escreva o preço') + '" onchange="precoFinalPeca(' + i + ',this.value)"></div>' +
-      '<div class="mut" style="align-self:end;padding-bottom:6px">Escreva o preço que quer dar ao cliente (gesto comercial) — a margem é calculada sozinha. Arredonda aos 0,10 €.</div></div>' +
+      '<div><label>Margem %</label><input type="number" step="any" value="' + esc(l.margemAj === '' ? '' : Math.round(Number(l.margemAj) * 100) / 100) + '" placeholder="' + (c && c.margem !== '' ? pct(c.margem) : 'tabela') + '" onchange="ED.linhas[' + i + '].margemAj=this.value===\'\'?\'\':Number(this.value);mudou()"></div></div>' +
+      '<div class="g2"><div><label>Preço da peça s/ IVA (manual)</label><input type="number" step="0.01" inputmode="decimal" value="' + (margemManual(l.margemAj) && c ? Number(c.pecaS).toFixed(2) : '') + '" placeholder="' + (c ? Number(c.pecaS).toFixed(2) : 'ex.: 18.40') + '" onchange="precoManualPeca(' + i + ',this.value)"></div>' +
+      '<div class="mut" style="align-self:end;padding-bottom:6px">Gesto comercial: escreva o preço s/ IVA que vai na fatura. O c/ IVA = s/ IVA × 1,23, sem arredondar aos 0,10 € — o total fica igual ao do programa de faturação. Vazio = margem normal.</div></div>' +
       '<div id="pz' + i + '">' + precoLinha(i) + '</div>' +
       '<label>Tamanhos <span class="mut">(opcional · a quantidade passa a ser a soma)</span></label>' + gradeTam(l, i) +
       '<div id="tam' + i + '">' + infoTam(l) + '</div>' +
@@ -3516,7 +3516,7 @@ function cima10(x) { var cent = Math.round(x * 100); return Math.ceil(cent / 10 
 function calcLocal() {
   if (!TABP || !TABP.pq || !ED || !ED.linhas.length) return null;
   if (ED.desconto !== '' && ED.desconto != null && Number(ED.desconto)) return null;   // com desconto, só a folha
-  var T = TABP, iva = Number(T.iva) || 0.23, linhas = [], sS = 0, sC = 0;
+  var T = TABP, iva = Number(T.iva) || 0.23, linhas = [], sS = 0, sC = 0, algumMan = false;
   for (var i = 0; i < ED.linhas.length; i++) {
     var l = ED.linhas[i], q = Number(l.qtd) || 0, row = T.pq[String(l.ref || '').trim()];
     if (!row || !(q > 0)) return null;
@@ -3527,13 +3527,15 @@ function calcLocal() {
     var tab = function (n) { if (!n || n === 'Sem personalização') return ''; var r = T.pers.filter(function (x) { return x[0] === n; })[0]; return r ? r[1 + tier] : 0; };
     var parte = function (n, aj) { if (!n || n === 'Sem personalização') return 0; if (aj !== '' && aj != null) return Number(aj); return Math.max(T.min, Number(tab(n)) || 0); };
     var p1 = parte(l.pers1, l.precoAj1), p2 = parte(l.pers2, l.precoAj2);
-    var unitC = Math.round((cima10(pecaS * (1 + iva)) + (p1 ? cima10(p1 * (1 + iva)) : 0) + (p2 ? cima10(p2 * (1 + iva)) : 0)) * 100) / 100;
-    var totC = Math.round(unitC * q * 100) / 100, totS = Math.round(totC / (1 + iva) * 100) / 100;
+    var man = margemManual(l.margemAj), unitC, totC, totS, uS;
+    if (man) { uS = pecaS + p1 + p2; unitC = Math.round(uS * (1 + iva) * 100) / 100; totS = Math.round(uS * q * 100) / 100; totC = Math.round(totS * (1 + iva) * 100) / 100; algumMan = true; }
+    else { unitC = Math.round((cima10(pecaS * (1 + iva)) + (p1 ? cima10(p1 * (1 + iva)) : 0) + (p2 ? cima10(p2 * (1 + iva)) : 0)) * 100) / 100;
+      totC = Math.round(unitC * q * 100) / 100; totS = Math.round(totC / (1 + iva) * 100) / 100; uS = Math.round(unitC / (1 + iva) * 1000) / 1000; }
     sS += totS; sC += totC;
     linhas.push({ ref: l.ref, escalao: ['1-10', '11-24', '25-50', '51+'][tier], custo: custo, margem: margem, pecaS: pecaS, tab1: tab(l.pers1), tab2: tab(l.pers2),
-                  persU: Math.round((p1 + p2) * 10000) / 10000, unitS: Math.round(unitC / (1 + iva) * 10000) / 10000, unitC: unitC, totS: totS, totC: totC });
+                  persU: Math.round((p1 + p2) * 10000) / 10000, unitS: uS, unitC: unitC, totS: totS, totC: totC });
   }
-  sS = Math.round(sS * 100) / 100; sC = Math.round(sC * 100) / 100;
+  sS = Math.round(sS * 100) / 100; sC = algumMan ? Math.round((sS + Math.round(sS * iva * 100) / 100) * 100) / 100 : Math.round(sC * 100) / 100;
   return { ok: true, local: true, linhas: linhas, subtotal: sS, desc: 0, totS: sS, totC: sC };
 }
 // preço por unidade c/ IVA de uma linha do orçamento (dados de apiAbrir) noutra quantidade — para mostrar o escalão seguinte no PDF
@@ -3559,17 +3561,20 @@ function custoLinha(i) {
   var c = CALC && CALC.linhas && CALC.linhas[i]; if (c && Number(c.custo) > 0) return Number(c.custo);
   var lc = calcLocal(); return lc && lc.linhas[i] && Number(lc.linhas[i].custo) > 0 ? Number(lc.linhas[i].custo) : 0;
 }
-function precoFinalPeca(i, v) {
-  var P = Number(String(v || '').replace(',', '.')); if (!(P > 0)) return;
+// margem "manual": a app guarda a margem exata que dá o preço s/ IVA escrito; a folha reconhece-a por ter mais de 6 casas
+// (na fração) e nesse artigo não arredonda aos 0,10 € — c/ IVA = s/ IVA × 1,23 e o total é base + IVA, como no ATOMGest
+function margemManual(pct) { if (pct === '' || pct == null) return false; var f = Number(pct) / 100; return f !== 0 && Math.round(f * 1e6) / 1e6 !== f; }
+function margemPct(frac) { var f = Number(frac); return Math.round(f * 1e6) / 1e6 !== f ? f * 100 : Math.round(f * 1e6) / 1e4; }
+function precoManualPeca(i, v) {
+  var t = String(v || '').replace(',', '.').trim();
+  if (t === '') { ED.linhas[i].margemAj = ''; mudou(); desenharLinhas(); return; }
+  var I = Math.round(Number(t) * 100) / 100; if (!(I > 0)) return;
   var custo = custoLinha(i); if (!custo) { msg('Escolha o artigo e a quantidade (e carregue em Calcular) antes de escrever o preço.', true); return; }
-  var alvo = cima10(P), iva = (TABP && Number(TABP.iva)) || 0.23;
-  var I = Math.floor(alvo / (1 + iva) * 100 + 1e-9) / 100;               // peça s/ IVA (2 casas)
-  while (I > 0.01 && cima10(I * (1 + iva)) > alvo) I = Math.round((I - 0.01) * 100) / 100;
-  while (cima10((I + 0.01) * (1 + iva)) <= alvo) I = Math.round((I + 0.01) * 100) / 100;
-  var m = Math.round((I / custo - 1) * 1e6) / 1e4;                          // margem % com 4 casas
-  if (Math.round(custo * (1 + m / 100) * 100) / 100 !== I) m = Math.round((I / custo - 1) * 1e8) / 1e6;
-  ED.linhas[i].margemAj = m; mudou(); desenharLinhas();
-  msg('Peça a ' + eur(alvo) + ' c/ IVA · margem ' + String(m).replace('.', ',') + '%' + (alvo !== Math.round(P * 100) / 100 ? ' (arredondado aos 0,10 €)' : ''));
+  var f = I / custo - 1;
+  if (Math.round(f * 1e6) / 1e6 === f) f += 1e-9;                          // garante que a folha a vê como manual
+  if (Math.round(custo * (1 + f) * 100) / 100 !== I) f = (I + 0.0000001) / custo - 1;
+  ED.linhas[i].margemAj = f * 100; mudou(); desenharLinhas();
+  msg('Peça a ' + eur(I) + ' s/ IVA (' + eur(Math.round(I * 123) / 100) + ' c/ IVA, sem arredondar)');
 }
 function pzTodos() { if (ED) ED.linhas.forEach(function (l, i) { var z = $('pz' + i); if (z) z.innerHTML = precoLinha(i); }); }
 
