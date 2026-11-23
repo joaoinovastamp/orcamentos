@@ -687,7 +687,7 @@ function duplicar() {
   ED = { numero: '', data: D.hoje, cliente: o.cliente, nif: o.nif, email: o.email, tel: o.tel, morada: o.morada, cp: o.cp,
          validade: o.validade, obs: o.obs, desconto: o.desconto === '' ? '' : Math.round(o.desconto * 1000) / 10, estado: '', fatura: '', margemGlobal: '',
          linhas: o.linhas.map(function (l) { return { produto: l.produto, ref: l.ref, cor: limpaCor(l.cor), qtd: l.qtd, tam: l.tam || '',
-           margemAj: (l.margemAj === '' || l.margemAj === null || !Number(l.margemAj)) ? '' : (Number(l.margemAj) < 0.001 ? 0 : Math.round(l.margemAj * 1000) / 10), pers1: l.pers1, precoAj1: l.precoAj1, pers2: l.pers2, precoAj2: l.precoAj2 }; }) };
+           margemAj: (l.margemAj === '' || l.margemAj === null || !Number(l.margemAj)) ? '' : (Number(l.margemAj) < 0.001 ? 0 : Math.round(l.margemAj * 1e6) / 1e4), pers1: l.pers1, precoAj1: l.precoAj1, pers2: l.pers2, precoAj2: l.precoAj2 }; }) };
   (o.opcoes || []).forEach(function (k) { if (ED.linhas[k]) ED.linhas[k].opc = true; });
   CALC = null; desenharEditor();
   msg('Cópia de ' + o.num + '. Muda o cliente ou os artigos e carrega em Guardar — fica com um número novo.');
@@ -725,7 +725,7 @@ function editar(num, depois) {
   call('apiAbrir', num).then(function (o) {
     ED = { numero: o.num, data: o.data, cliente: o.cliente, nif: o.nif, email: o.email, tel: o.tel, morada: o.morada, cp: o.cp,
            validade: o.validade, obs: o.obs, desconto: o.desconto === '' ? '' : Math.round(o.desconto * 1000) / 10, estado: o.estado, fatura: o.fatura,
-           linhas: o.linhas.map(function (l) { return { produto: l.produto, ref: l.ref, cor: limpaCor(l.cor), qtd: l.qtd, tam: l.tam || '', margemAj: (l.margemAj === '' || l.margemAj === null || !Number(l.margemAj)) ? '' : (Number(l.margemAj) < 0.001 ? 0 : Math.round(l.margemAj * 1000) / 10),
+           linhas: o.linhas.map(function (l) { return { produto: l.produto, ref: l.ref, cor: limpaCor(l.cor), qtd: l.qtd, tam: l.tam || '', margemAj: (l.margemAj === '' || l.margemAj === null || !Number(l.margemAj)) ? '' : (Number(l.margemAj) < 0.001 ? 0 : Math.round(l.margemAj * 1e6) / 1e4),
              pers1: l.pers1, precoAj1: l.precoAj1, pers2: l.pers2, precoAj2: l.precoAj2 }; }) };
     (o.opcoes || []).forEach(function (k) { if (ED.linhas[k]) ED.linhas[k].opc = true; });
     ED.margemGlobal = ED.linhas.length && ED.linhas.every(function (l) { return l.margemAj !== '' && l.margemAj === ED.linhas[0].margemAj; }) ? ED.linhas[0].margemAj : '';
@@ -774,7 +774,9 @@ function desenharLinhas() {
       '<div class="g3"><div><label>Cor</label>' + (cores.length ? '<select onchange="ED.linhas[' + i + '].cor=this.value;mudou()">' + opts(cores, l.cor, '—') + '</select>'
         : '<input value="' + esc(l.cor) + '" onchange="ED.linhas[' + i + '].cor=this.value;mudou()">') + '</div>' +
       '<div><label>Quantidade</label><input id="q' + i + '" type="number" inputmode="numeric" min="1" value="' + esc(l.qtd) + '" onchange="ED.linhas[' + i + '].qtd=Number(this.value)||\'\';mudou();verTam(' + i + ')"></div>' +
-      '<div><label>Margem %</label><input type="number" step="1" value="' + esc(l.margemAj) + '" placeholder="' + (c && c.margem !== '' ? pct(c.margem) : 'tabela') + '" onchange="ED.linhas[' + i + '].margemAj=this.value===\'\'?\'\':Number(this.value);mudou()"></div></div>' +
+      '<div><label>Margem %</label><input type="number" step="any" value="' + esc(l.margemAj) + '" placeholder="' + (c && c.margem !== '' ? pct(c.margem) : 'tabela') + '" onchange="ED.linhas[' + i + '].margemAj=this.value===\'\'?\'\':Number(this.value);mudou()"></div></div>' +
+      '<div class="g2"><div><label>Preço final da peça c/ IVA</label><input type="number" step="0.1" inputmode="decimal" placeholder="' + (c ? eur(cima10(Number(c.pecaS) * 1.23)) : 'escreva o preço') + '" onchange="precoFinalPeca(' + i + ',this.value)"></div>' +
+      '<div class="mut" style="align-self:end;padding-bottom:6px">Escreva o preço que quer dar ao cliente (gesto comercial) — a margem é calculada sozinha. Arredonda aos 0,10 €.</div></div>' +
       '<div id="pz' + i + '">' + precoLinha(i) + '</div>' +
       '<label>Tamanhos <span class="mut">(opcional · a quantidade passa a ser a soma)</span></label>' + gradeTam(l, i) +
       '<div id="tam' + i + '">' + infoTam(l) + '</div>' +
@@ -3551,6 +3553,23 @@ function dicaEscalao(l) {
   var q = Number(l.qtd) || 0, prox = [11, 25, 51].filter(function (t) { return t > q; })[0]; if (!prox) return null;
   var v = precoNoEscalao(l, prox), atual = Number(l.unitC) || 0; if (!v || !(atual - v >= 0.1)) return null;
   return { q: prox, v: v, poupa: Math.round((1 - v / atual) * 100) };
+}
+// gesto comercial: o Hugo escreve o preço final da peça c/ IVA e a app calcula a margem que dá exatamente esse preço
+function custoLinha(i) {
+  var c = CALC && CALC.linhas && CALC.linhas[i]; if (c && Number(c.custo) > 0) return Number(c.custo);
+  var lc = calcLocal(); return lc && lc.linhas[i] && Number(lc.linhas[i].custo) > 0 ? Number(lc.linhas[i].custo) : 0;
+}
+function precoFinalPeca(i, v) {
+  var P = Number(String(v || '').replace(',', '.')); if (!(P > 0)) return;
+  var custo = custoLinha(i); if (!custo) { msg('Escolha o artigo e a quantidade (e carregue em Calcular) antes de escrever o preço.', true); return; }
+  var alvo = cima10(P), iva = (TABP && Number(TABP.iva)) || 0.23;
+  var I = Math.floor(alvo / (1 + iva) * 100 + 1e-9) / 100;               // peça s/ IVA (2 casas)
+  while (I > 0.01 && cima10(I * (1 + iva)) > alvo) I = Math.round((I - 0.01) * 100) / 100;
+  while (cima10((I + 0.01) * (1 + iva)) <= alvo) I = Math.round((I + 0.01) * 100) / 100;
+  var m = Math.round((I / custo - 1) * 1e6) / 1e4;                          // margem % com 4 casas
+  if (Math.round(custo * (1 + m / 100) * 100) / 100 !== I) m = Math.round((I / custo - 1) * 1e8) / 1e6;
+  ED.linhas[i].margemAj = m; mudou(); desenharLinhas();
+  msg('Peça a ' + eur(alvo) + ' c/ IVA · margem ' + String(m).replace('.', ',') + '%' + (alvo !== Math.round(P * 100) / 100 ? ' (arredondado aos 0,10 €)' : ''));
 }
 function pzTodos() { if (ED) ED.linhas.forEach(function (l, i) { var z = $('pz' + i); if (z) z.innerHTML = precoLinha(i); }); }
 
