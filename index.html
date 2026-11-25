@@ -2540,12 +2540,67 @@ function encMarcar() {
   var obsAntes = EN.obs, numE = EN.num;
   call('apiEncMarcarEnviada', numE).then(function () { msg('Encomenda ' + numE + ' marcada como Enviada.'); ENCS = null; encAvancarOrcs(obsAntes, ['A encomendar'], 'À espera de material', false); abrirEnc(numE); });
 }
-function encPdf(num) {
-  call('apiEncPdf', num).then(function (r) {
-    var bin = atob(r.b64), a = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
-    var url = URL.createObjectURL(new Blob([a], { type: 'application/pdf' })), l = document.createElement('a');
-    l.href = url; l.download = r.nome; l.target = '_blank'; document.body.appendChild(l); l.click(); l.remove(); setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+function encPdf(num) {   // PDF da encomenda desenhado na app (modelo INOVASTAMP), com os mesmos dados do email
+  carregando(true);
+  Promise.all([call('apiEncAbrir', num), imgDe(LOGO_INO)]).then(function (r) {
+    return Promise.all(encDesenhar(r[0], r[1]).map(canvasJpeg)).then(function (pgs) {
+      carregando(false);
+      var url = URL.createObjectURL(new Blob([pdfDeJpegs(pgs)], { type: 'application/pdf' })), l = document.createElement('a');
+      l.href = url; l.download = 'Encomenda ' + num + ' INOVASTAMP.pdf'; l.target = '_blank'; document.body.appendChild(l); l.click(); l.remove(); setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+    });
+  }).catch(function (e) { carregando(false); msg('Não consegui gerar o PDF: ' + (e && e.message || e), true); });
+}
+function encDesenhar(e, ino) {
+  var F = '"Inter", Arial, sans-serif', S = 2, PW = 794, PH = 1123, M = 49, XR = PW - M, pags = [], x = null, pg = 0;
+  function novaPag() { var c = document.createElement('canvas'); c.width = PW * S; c.height = PH * S; x = c.getContext('2d'); x.setTransform(S, 0, 0, S, 0, 0); x.fillStyle = '#fff'; x.fillRect(0, 0, PW, PH); pags.push(c); pg++; }
+  function fnt(w, s) { x.font = w + ' ' + s + 'px ' + F; }
+  function txt(t, X, Y, cor, w, s, al, ls) { fnt(w, s); x.fillStyle = cor; esp(x, (ls || 0) + 'px'); x.textAlign = al || 'left'; x.fillText(String(t), X, Y); esp(x, '0px'); x.textAlign = 'left'; }
+  function cab(H) { var g = x.createRadialGradient(PW, 0, 10, PW, 0, PW * 1.25); g.addColorStop(0, '#2b4a85'); g.addColorStop(0.5, '#1a2c52'); g.addColorStop(1, '#0f1a30'); x.fillStyle = g; x.fillRect(0, 0, PW, H);
+    var b = x.createLinearGradient(0, 0, PW, 0); b.addColorStop(0, '#C2268F'); b.addColorStop(0.45, '#7b3fa0'); b.addColorStop(1, '#1f8fd6'); x.fillStyle = b; x.fillRect(0, H - 3, PW, 3); }
+  function rodape() { var y = PH - 48; x.fillStyle = '#e6e9f0'; x.fillRect(0, y, PW, 1); txt('INOVASTAMP, Lda', M, y + 28, '#14213D', 700, 8.6); fnt(700, 8.6); var w0 = x.measureText('INOVASTAMP, Lda').width;
+    txt(' · Estamparia têxtil · serigrafia e DTF', M + w0, y + 28, '#8a93a8', 400, 8.6); txt('joaoinovastamp@gmail.com · Póvoa de Lanhoso' + (npag > 1 ? ' · página ' + pg + '/' + npag : ''), XR, y + 28, '#8a93a8', 400, 8.6, 'right'); }
+  // agrupar por artigo + cor (tamanhos lado a lado)
+  var grupos = [], idx = {}, nPecas = 0;
+  (e.linhas || []).forEach(function (l) { var q = Number(l.qtd) || 0; if (!q) return; nPecas += q; var k = (l.ref || l.produto) + '|' + (l.cor || '');
+    if (!(k in idx)) { idx[k] = grupos.length; grupos.push({ produto: l.produto, ref: l.ref, cor: l.cor, tams: [], total: 0, notas: [] }); }
+    var g = grupos[idx[k]]; g.tams.push([l.tam || '—', q]); g.total += q; if (l.nota && g.notas.indexOf(l.nota) < 0) g.notas.push(l.nota); });
+  var RH = 58, porPag1 = 9, porPagN = 13, npag = Math.max(1, 1 + Math.ceil(Math.max(0, grupos.length - porPag1) / porPagN));
+  novaPag(); cab(250);
+  if (ino) { var ih = 44, iw = ih * ino.width / ino.height; x.fillStyle = '#fff'; rr(x, M, 34, iw + 18, 62, 12); x.fill(); x.drawImage(ino, M + 9, 34 + 9, iw, ih); }
+  txt('PEDIDO A FORNECEDOR', M, 121, '#aab6d3', 600, 9, 'left', 2.6);
+  txt('Encomenda', M - 2, 160, '#fff', 900, 44, 'left', -1.5);
+  txt('Nº ' + e.num, M, 184, '#f3b6dc', 700, 13, 'left', 1);
+  txt('FORNECEDOR', XR, 140, '#aab6d3', 600, 9, 'right', 2.6); txt(String(e.forn || '').toUpperCase(), XR, 164, '#fff', 800, 17, 'right');
+  x.fillStyle = 'rgba(255,255,255,.14)'; x.fillRect(M, 200, XR - M, 1);
+  var dt = String(e.data || '').split('-'); dt = dt.length === 3 ? dt[2] + '/' + dt[1] + '/' + dt[0] : String(e.data || '');
+  [['Data', dt], ['Peças', nPecas + (nPecas === 1 ? ' unidade' : ' unidades')], ['Artigos', String(grupos.length)], ['Contacto', 'João · INOVASTAMP']].forEach(function (m, i) {
+    var X = M + i * 174; txt(m[0].toUpperCase(), X, 222, '#aab6d3', 600, 8, 'left', 2); txt(m[1], X, 239, '#fff', 600, 11.5); });
+  var y = 286;
+  function cabT(Y) { txt('ARTIGO', M, Y, '#8a93a8', 700, 8, 'left', 2); txt('COR', 330, Y, '#8a93a8', 700, 8, 'left', 2); txt('TAMANHOS · QUANTIDADES', 470, Y, '#8a93a8', 700, 8, 'left', 2); txt('TOTAL', XR, Y, '#8a93a8', 700, 8, 'right', 2);
+    x.fillStyle = '#14213D'; x.fillRect(M, Y + 10, XR - M, 1.5); return Y + 12; }
+  y = cabT(y);
+  grupos.forEach(function (g, i) {
+    if (i === porPag1 || (i > porPag1 && (i - porPag1) % porPagN === 0)) { rodape(); novaPag(); cab(76); txt('ENCOMENDA ' + e.num, M, 44, '#fff', 800, 14, 'left', 1); txt(String(e.forn || ''), XR, 44, '#aab6d3', 600, 10, 'right'); y = cabT(112); }
+    var nome = String(g.produto || '').replace(/^\S+\s+—\s+/, ''); fnt(800, 11.5); nome = linhas(x, nome, 260)[0];
+    txt(g.ref || '', M, y + 20, '#C2268F', 800, 10, 'left', 0.5); txt(nome, M, y + 36, '#14213D', 800, 11.5);
+    if (g.notas.length) { fnt(400, 9.5); txt(linhas(x, 'Nota: ' + g.notas.join(' · '), 260)[0], M, y + 50, '#6b7590', 400, 9.5); }
+    fnt(600, 10.5); txt(linhas(x, String(g.cor || '—'), 130)[0], 330, y + 30, '#33405e', 600, 10.5);
+    var cx = 470; g.tams.forEach(function (t) { var lab = t[0] + ' · ' + t[1], w; fnt(700, 10); w = x.measureText(lab).width + 16; if (cx + w > XR - 52) { return; }
+      x.strokeStyle = '#d5dae5'; x.lineWidth = 1; rr(x, cx, y + 17, w, 19, 9.5); x.stroke(); txt(lab, cx + 8, y + 30, '#14213D', 700, 10); cx += w + 5; });
+    txt(String(g.total), XR, y + 31, '#14213D', 900, 14, 'right');
+    y += RH; x.fillStyle = '#e6e9f0'; x.fillRect(M, y, XR - M, 1);
   });
+  // resumo
+  var ry = y + 26;
+  txt('ENTREGA E CONDIÇÕES', M, ry, '#8a93a8', 700, 8, 'left', 2.4);
+  var cond = ['Morada de entrega: Travessa do Parque Industrial, nº 206, 4830-835 Vilela, Póvoa de Lanhoso.', 'Agradecemos a confirmação da encomenda, o prazo de entrega e o envio da respetiva fatura pro forma.'];
+  if (e.obs) cond.unshift('Observações: ' + e.obs);
+  var cy = ry + 20; fnt(400, 10.2); cond.forEach(function (c) { linhas(x, c, 400).forEach(function (s, k) { if (!k) { x.fillStyle = '#1f8fd6'; x.beginPath(); x.arc(M + 2.5, cy - 3.5, 2.5, 0, 7); x.fill(); } txt(s, M + 12, cy, '#33405e', 400, 10.2); cy += 15; }); cy += 3; });
+  var bx = XR - 230, bw = 230; x.save(); rr(x, bx, ry - 14, bw, 70, 14); x.clip(); x.fillStyle = '#14213D'; x.fillRect(bx, ry - 14, bw, 70);
+  txt('TOTAL DE PEÇAS', bx + 19, ry + 26, '#aab6d3', 700, 8.5, 'left', 2.2); txt(String(nPecas), bx + bw - 19, ry + 32, '#fff', 900, 26, 'right'); x.restore();
+  txt('NIF 510 723 535 · INOVASTAMP, Lda', M, PH - 70, '#8a93a8', 400, 8.6);
+  rodape();
+  return pags;
 }
 
 
