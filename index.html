@@ -2531,8 +2531,14 @@ function encGuardar(enviar) {
   if (enviar && !confirm((EN.estado === 'Enviada' ? 'Esta encomenda já foi enviada. Enviar outra vez?\n\n' : '') + 'Enviar a encomenda à ' + EN.forn + ' por email (com o PDF)?')) return;
   if (!enviar && EN.estado === 'Enviada' && !confirm('Esta encomenda já foi enviada ao fornecedor. Guardar as alterações por cima?')) return;
   var obsAntes = EN.obs;
-  call('apiEncGuardar', { num: EN.num, forn: EN.forn, obs: EN.obs, data: EN.data, linhas: ls.map(function (l) { return { produto: l.produto, cor: l.cor, tam: l.tam, qtd: Number(l.qtd), nota: l.nota || '' }; }) }, !!enviar)
-    .then(function (r) { msg('Encomenda ' + r.num + ' guardada (' + r.linhas + ' linhas, ' + eur(r.total) + ' s/IVA)' + (r.enviada ? '\nEnviada para ' + r.email : '')); ENCS = null;
+  var dEnc = { num: EN.num, forn: EN.forn, obs: EN.obs, data: EN.data, linhas: ls.map(function (l) { return { produto: l.produto, cor: l.cor, tam: l.tam, qtd: Number(l.qtd), nota: l.nota || '' }; }) };
+  // enviar: 1) guarda (dá o nº), 2) desenha o PDF no modelo INOVASTAMP com os dados guardados, 3) guarda + envia com esse PDF anexado
+  var pEnc = !enviar ? call('apiEncGuardar', dEnc, false) : call('apiEncGuardar', dEnc, false).then(function (r0) {
+    dEnc.num = r0.num;
+    return Promise.all([call('apiEncAbrir', r0.num), imgDe(LOGO_INO)]).then(function (x) { return Promise.all(encDesenhar(x[0], x[1]).map(canvasJpeg)); })
+      .then(function (pgs) { dEnc.pdfB64 = b64DeBytes(pdfDeJpegs(pgs)); return call('apiEncGuardar', dEnc, true); });
+  });
+  pEnc.then(function (r) { msg('Encomenda ' + r.num + ' guardada (' + r.linhas + ' linhas, ' + eur(r.total) + ' s/IVA)' + (r.enviada ? '\nEnviada para ' + r.email : '')); ENCS = null;
       if (r.enviada) encAvancarOrcs(obsAntes, ['A encomendar'], 'À espera de material', false); abrirEnc(r.num); });
 }
 function encMarcar() {
